@@ -1,0 +1,186 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+env:
+  PNPM_VERSION: "10.33.3"
+  NODE_VERSION: "22"
+
+jobs:
+  # ── 1. Typecheck + lint ──────────────────────────────────
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm typecheck
+
+  # ── 2. Tests unitaires ───────────────────────────────────
+  unit-tests:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build packages (nécessaire pour les tests)
+        run: pnpm --filter @elearning/domain build && pnpm --filter @elearning/db db:generate
+
+      - name: Tests unitaires (hors DB)
+        run: pnpm --filter @elearning/api test --reporter=verbose
+        env:
+          DATABASE_URL: ""   # tests unitaires n'ont pas besoin de la DB
+
+      - name: Tests web (axe-core a11y)
+        run: pnpm --filter @elearning/web test --reporter=verbose
+
+  # ── 3. Tests d'intégration (avec Postgres) ──────────────
+  integration-tests:
+    name: Integration tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: elearning
+          POSTGRES_PASSWORD: elearning_dev
+          POSTGRES_DB: elearning_dev
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U elearning -d elearning_dev"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Générer le client Prisma
+        run: pnpm --filter @elearning/db db:generate
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL }}
+
+      - name: Appliquer les migrations
+        run: pnpm --filter @elearning/db db:migrate:deploy
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL }}
+
+      - name: Tests d'intégration API
+        run: pnpm --filter @elearning/api test --reporter=verbose
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL }}
+          JWT_SECRET: ci-test-secret-min-64-chars-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+          MFA_SECRET: ci-test-mfa-secret-32chars-xxxxxxx
+
+    env:
+      DATABASE_URL: "postgresql://elearning:elearning_dev@localhost:5433/elearning_dev?schema=public"
+
+  # ── 4. Build ─────────────────────────────────────────────
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: [typecheck, unit-tests]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Générer le client Prisma
+        run: pnpm --filter @elearning/db db:generate
+
+      - name: Build packages
+        run: pnpm --filter @elearning/domain build && pnpm --filter @elearning/db build
+
+      - name: Build API
+        run: pnpm --filter @elearning/api build
+
+      - name: Build Web
+        run: pnpm --filter @elearning/web build
+        env:
+          NEXTAUTH_SECRET: ci-build-secret-placeholder
+          NEXTAUTH_URL: http://localhost:3000
+          API_URL: http://localhost:3001
+
+  # ── 5. Vérification migrations (drift check) ────────────
+  migrate-check:
+    name: Migrate drift check
+    runs-on: ubuntu-latest
+    needs: [typecheck]
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: elearning
+          POSTGRES_PASSWORD: elearning_dev
+          POSTGRES_DB: elearning_dev
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U elearning -d elearning_dev"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Vérifier que le schéma est en sync avec les migrations
+        run: pnpm --filter @elearning/db exec prisma migrate diff --from-migrations packages/db/prisma/migrations --to-schema-datamodel packages/db/prisma/schema.prisma --shadow-database-url $DATABASE_URL --exit-code
+        env:
+          DATABASE_URL: "postgresql://elearning:elearning_dev@localhost:5433/elearning_dev?schema=public"

@@ -1,0 +1,320 @@
+@import "tailwindcss";
+
+/* =========================================================================
+   Holenek — Palette officielle
+   Source : charte graphique holenek.fr
+   Usage  : Tailwind v4 (CSS-first config). Tokens accessibles via
+            bg-primary, text-accent, border-surface-warm, etc.
+   ========================================================================= */
+
+@theme {
+  /* ---- Couleurs principales (palette holenek.fr) ---- */
+  --color-primary: #1a6c7a;          /* Teal — titres, logo, CTA principaux */
+  --color-primary-deep: #153243;     /* Navy — hover, sections secondaires */
+  --color-primary-darkest: #000f2b;  /* Deep navy — footer, sections foncées */
+
+  --color-accent: #1a6c7a;           /* Teal — liens, CTA secondaires */
+  --color-accent-mid: #153243;       /* Navy intermédiaire (dégradés) */
+  --color-accent-vivid: #1a6c7a;     /* Teal vif (dégradés) */
+  --color-accent-bright: #BFD1FF;    /* Periwinkle — highlights, badges */
+  --color-accent-soft: #f3f9fb;      /* Bleu-gris clair — fonds décoratifs */
+
+  /* ---- Neutres ---- */
+  --color-ink: #3a3a3a;              /* Corps de texte (charcoal) */
+  --color-ink-soft: #595959;         /* Texte secondaire, mentions légales */
+  --color-muted: #87A8B9;            /* Bleu-gris doux — captions, tertiaire */
+
+  --color-surface: #f3f9fb;          /* Bleu-gris clair — cartes, sections alt */
+  --color-surface-warm: #dddddd;     /* Gris — bordures, séparateurs */
+  --color-bg: #ffffff;               /* Fond de page — blanc pur */
+}
+
+/* =========================================================================
+   Règles globales
+   ========================================================================= */
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-ink);
+  font-feature-settings: "rlig" 1, "calt" 1;
+}
+
+/* =========================================================================
+   Directives pour l'éditeur IA
+   -------------------------------------------------------------------------
+   1. Utiliser UNIQUEMENT les tokens ci-dessus pour toute couleur.
+   2. Ne JAMAIS recourir aux palettes Tailwind par défaut (gray-*, blue-*,
+      slate-*, zinc-*) ni au noir pur (#000).
+   3. Défaut sûr : bg-bg (blanc) + text-ink + accents text-primary.
+   4. Boutons primaires : bg-primary text-white hover:bg-primary-deep.
+   5. Liens : text-primary hover:text-primary-deep.
+   6. Cartes : bg-surface border border-surface-warm.
+   7. Footer : bg-primary-darkest text-white.
+   8. Dégradés autorisés : from-accent-soft via-primary to-primary-deep
+      (uniquement dans la gamme teal/navy officielle holenek.fr).
+   9. Fond de page : TOUJOURS blanc (#ffffff / bg-bg). Pas de fond gris
+      ou coloré sur le body.
+   ========================================================================= */
+
+/* =========================================================================
+   TipTap / prose-holenek — styles éditeur et rendu apprenant
+   ========================================================================= */
+
+.prose-holenek {
+  color: var(--color-ink);
+  font-size: 17px;
+  line-height: 1.8;
+}
+
+.prose-holenek h2 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--color-primary-deep);
+  margin-top: 1.5rem;
+  margin-bottom: 0.5rem;
+}
+
+/* Pas de marge en haut sur le premier élément d'un segment */
+.prose-holenek > :first-child {
+  margin-top: 0;
+}
+
+.prose-holenek h3 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--color-primary-deep);
+  margin-top: 1.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.prose-holenek h4 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-ink);
+  margin-top: 1rem;
+  margin-bottom: 0.375rem;
+}
+
+.prose-holenek p {
+  margin-bottom: 0.75rem;
+}
+
+.prose-holenek strong {
+  font-weight: 600;
+  color: var(--color-primary-deep);
+}
+
+.prose-holenek em {
+  font-style: italic;
+}
+
+.prose-holenek a {
+  color: var(--color-primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.prose-holenek a:hover {
+  color: var(--color-primary-deep);
+}
+
+.prose-holenek ul {
+  list-style: none;
+  padding-left: 0;
+  margin-bottom: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.prose-holenek ul li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding-left: 0;
+}
+
+/* Puce — fonctionne que li contienne du texte direct ou un <p> (TipTap v3) */
+.prose-holenek ul li::before {
+  content: "";
+  display: block;
+  width: 0.5rem;
+  height: 0.5rem;
+  min-width: 0.5rem;
+  border-radius: 50%;
+  background: var(--color-primary);
+  flex-shrink: 0;
+  margin-top: 0.65em;
+}
+
+/* TipTap v3 enveloppe le contenu dans un <p> à l'intérieur du <li> */
+.prose-holenek ul li > p {
+  margin: 0;
+  flex: 1;
+}
+
+.prose-holenek ol {
+  list-style: none;
+  padding-left: 0;
+  margin-bottom: 1rem;
+  counter-reset: ol-counter;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.prose-holenek ol li {
+  counter-increment: ol-counter;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.prose-holenek ol li::before {
+  content: counter(ol-counter);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  min-width: 1.5rem;
+  border-radius: 50%;
+  background: var(--color-primary);
+  color: white;
+  font-size: 0.7rem;
+  font-weight: 700;
+  flex-shrink: 0;
+  margin-top: 0.15em;
+}
+
+/* TipTap v3 enveloppe le contenu dans un <p> à l'intérieur du <li> */
+.prose-holenek ol li > p {
+  margin: 0;
+  flex: 1;
+}
+
+.prose-holenek blockquote {
+  border-left: 4px solid var(--color-primary);
+  background: var(--color-surface);
+  padding: 1rem 1.5rem;
+  border-radius: 0 0.75rem 0.75rem 0;
+  margin: 1.5rem 0;
+  font-style: italic;
+  color: var(--color-ink-soft);
+}
+
+.prose-holenek code:not(pre code) {
+  background: var(--color-surface);
+  color: var(--color-primary-deep);
+  padding: 0.15em 0.4em;
+  border-radius: 0.3em;
+  font-size: 0.85em;
+  font-family: ui-monospace, monospace;
+}
+
+.prose-holenek pre {
+  background: #1e2430;
+  color: #e2e8f0;
+  border-radius: 0.75rem;
+  padding: 1.25rem 1.5rem;
+  overflow-x: auto;
+  margin: 1.5rem 0;
+}
+
+.prose-holenek pre code {
+  font-size: 0.875rem;
+  font-family: ui-monospace, monospace;
+  line-height: 1.7;
+}
+
+.prose-holenek hr {
+  border-color: var(--color-surface-warm);
+  margin: 2rem 0;
+}
+
+.prose-holenek img {
+  border-radius: 0.75rem;
+  border: 1px solid var(--color-surface-warm);
+  max-width: 100%;
+}
+
+/* H1 */
+.prose-holenek h1 {
+  font-size: 2rem;
+  font-weight: 800;
+  color: var(--color-primary-deep);
+  margin-top: 2.5rem;
+  margin-bottom: 1rem;
+  line-height: 1.2;
+}
+
+/* Tableaux */
+.prose-holenek table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.5rem 0;
+  font-size: 0.95em;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  border: 1px solid var(--color-surface-warm);
+}
+
+.prose-holenek table th,
+.prose-holenek table td {
+  padding: 0.6rem 1rem;
+  border: 1px solid var(--color-surface-warm);
+  text-align: left;
+  vertical-align: top;
+}
+
+.prose-holenek table th {
+  background: var(--color-primary);
+  color: white;
+  font-weight: 600;
+  font-size: 0.85em;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.prose-holenek table tr:nth-child(even) td {
+  background: var(--color-surface);
+}
+
+.prose-holenek table tr:hover td {
+  background: var(--color-accent-soft);
+}
+
+/* Cellule sélectionnée dans l'éditeur */
+.prose-holenek .selectedCell {
+  background: var(--color-accent-bright) !important;
+  outline: 2px solid var(--color-primary);
+}
+
+/* Poignée de redimensionnement colonne */
+.prose-holenek .column-resize-handle {
+  background-color: var(--color-primary);
+  width: 3px;
+  position: absolute;
+  right: -2px;
+  top: 0;
+  bottom: 0;
+  pointer-events: none;
+}
+
+.tableWrapper {
+  overflow-x: auto;
+  margin: 1.5rem 0;
+}
+
+/* Placeholder TipTap */
+.tiptap p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: var(--color-muted);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}

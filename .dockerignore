@@ -1,0 +1,27 @@
+# ── never in image ────────────────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+.env.production
+.git
+.gitignore
+
+# ── local build artifacts (rebuilt inside Docker) ─────────────────────────────
+node_modules
+.next
+dist
+.turbo
+*.tsbuildinfo
+
+# ── dev/test only ─────────────────────────────────────────────────────────────
+**/*.log
+apps/*/test
+apps/*/e2e
+tools/
+Cours/
+docs/
+uploads/
+
+# ── CI / repo meta ────────────────────────────────────────────────────────────
+.github
+*.md

@@ -1,0 +1,25 @@
+{
+  "name": "@elearning/ui",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "main": "./src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "next": ">=15.0.0",
+    "react": "^19.0.0"
+  },
+  "devDependencies": {
+    "@elearning/tsconfig": "workspace:*",
+    "@types/react": "^19.1.0",
+    "typescript": "^5.8.0"
+  }
+}

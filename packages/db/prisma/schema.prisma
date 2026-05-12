@@ -1,0 +1,302 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Refs: SPEC.md §6 — mono-organisation Holenek, isolation par platform_role
+
+enum PlatformRole {
+  super_admin
+  admin
+  trainer
+  manager
+  learner
+}
+
+// ─── User ────────────────────────────────────────────────
+// Identite + authentification + role plateforme
+model User {
+  id            String       @id @default(uuid())
+  email         String       @unique
+  password_hash String
+  display_name  String
+  platform_role PlatformRole
+  is_active     Boolean      @default(true)
+  mfa_secret    String?
+  mfa_enabled   Boolean      @default(false)
+  last_login_at DateTime?
+  created_at    DateTime     @default(now())
+  updated_at    DateTime     @updatedAt
+
+  learner Learner? // profil metier 1-to-1, present si role != super_admin
+
+  @@index([platform_role])
+  @@map("users")
+}
+
+// ─── Learner ─────────────────────────────────────────────
+// Profil metier — present pour learner, trainer, manager, admin
+// Refs: SPEC.md §6 (job_role = metier, pas role plateforme)
+model Learner {
+  id         String   @id @default(uuid())
+  user_id    String   @unique
+  job_role   String   // "hr" | "developer" | "manager" | "finance"
+  team_id    String?  // label organisationnel libre, ex: "pole-rh"
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  user              User              @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  stamps            Stamp[]
+  scenario_sessions ScenarioSession[]
+  streaks           Streak[]
+
+  @@index([job_role])
+  @@index([team_id])
+  @@map("learners")
+}
+
+// ─── Competence ──────────────────────────────────────────
+model Competence {
+  id         String   @id @default(uuid())
+  code       String   @unique
+  label_fr   String
+  label_en   String
+  created_at DateTime @default(now())
+
+  stamps Stamp[]
+
+  @@map("competences")
+}
+
+// ─── Stamp ───────────────────────────────────────────────
+// Refs: SPEC.md §9 R-1.1 (Green/Orange/Red), R-1.5 (certificat = hash + signature)
+model Stamp {
+  id                  String   @id @default(uuid())
+  learner_id          String
+  competence_id       String
+  state               String   // "green" | "orange" | "red"
+  validated_at        DateTime
+  expires_at          DateTime
+  module_version_hash String
+  performance_score   Float
+  mastery_score       Float?   // R-2a.1 : jamais en certificat conformite
+  attempts            Int      @default(1)
+  created_at          DateTime @default(now())
+
+  learner    Learner    @relation(fields: [learner_id], references: [id], onDelete: Cascade)
+  competence Competence @relation(fields: [competence_id], references: [id], onDelete: Cascade)
+
+  @@index([learner_id])
+  @@index([competence_id])
+  @@index([state])
+  @@map("stamps")
+}
+
+// ─── Module ──────────────────────────────────────────────
+// Refs: SPEC-CONTENT.md — content_fr est du JSON TipTap structure
+model Module {
+  id                         String   @id @default(uuid())
+  version                    String
+  version_hash               String   // SHA-256(JSON.stringify(content_fr)), recalcule a publication
+  title_fr                   String
+  status                     String   @default("draft") // "draft" | "published"
+  competence_ids             String[] // IDs de competences ciblees
+  content_fr                 Json?    // ModuleContent (lessons, blocks — SPEC-CONTENT.md §2)
+  estimated_duration_minutes Int?
+  created_at                 DateTime @default(now())
+  updated_at                 DateTime @updatedAt
+
+  @@index([status])
+  @@map("modules")
+}
+
+// ─── LearningPath ────────────────────────────────────────
+model LearningPath {
+  id              String   @id @default(uuid())
+  title_fr        String
+  target_role     String   // "hr" | "developer" | "manager" | "finance" | "all"
+  module_sequence String[] // IDs de modules ordonnes
+  is_mandatory    Boolean  @default(false)
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  @@index([target_role])
+  @@map("learning_paths")
+}
+
+// ─── EvaluationItem ──────────────────────────────────────
+// TBD-1.1 RESOLVED — Phase 1 : qcm_single, qcm_multi, true_false
+// content : { question_fr, question_en?, choices?, correct_answer? }
+model EvaluationItem {
+  id           String   @id @default(uuid())
+  bank_id      String
+  format       String   // "qcm_single" | "qcm_multi" | "true_false" | "open" | "video_branched"
+  difficulty   Int      // 1-5
+  bloom_level  Int      // 1-6
+  concept_tags String[]
+  content      Json?    // ItemContent
+  created_at   DateTime @default(now())
+
+  @@index([bank_id])
+  @@index([format])
+  @@index([difficulty])
+  @@map("evaluation_items")
+}
+
+// ─── Scenario ────────────────────────────────────────────
+// Refs: SPEC.md §11 US-2a.1 — arbre de decision
+model Scenario {
+  id             String   @id @default(uuid())
+  title_fr       String
+  description_fr String?
+  root_node_id   String?  // nullable pendant la creation
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+
+  nodes    ScenarioNode[]
+  sessions ScenarioSession[]
+
+  @@map("scenarios")
+}
+
+model ScenarioNode {
+  id          String   @id @default(uuid())
+  scenario_id String
+  content_fr  String
+  is_terminal Boolean  @default(false)
+  // choices : [{ label_fr, next_node_id, is_correct }]
+  choices     Json     @default("[]")
+  created_at  DateTime @default(now())
+
+  scenario Scenario @relation(fields: [scenario_id], references: [id], onDelete: Cascade)
+
+  @@index([scenario_id])
+  @@map("scenario_nodes")
+}
+
+model ScenarioSession {
+  id              String    @id @default(uuid())
+  scenario_id     String
+  learner_id      String
+  current_node_id String?   // null = termine
+  // path_taken : [{ node_id, choice_index, chosen_at }]
+  path_taken      Json      @default("[]")
+  completed       Boolean   @default(false)
+  score           Float?
+  started_at      DateTime  @default(now())
+  completed_at    DateTime?
+
+  scenario Scenario @relation(fields: [scenario_id], references: [id], onDelete: Cascade)
+  learner  Learner  @relation(fields: [learner_id], references: [id], onDelete: Cascade)
+
+  @@index([learner_id])
+  @@index([scenario_id])
+  @@map("scenario_sessions")
+}
+
+// ─── Streak ──────────────────────────────────────────────
+// Refs: SPEC.md §11 US-2a.3
+model Streak {
+  id                 String    @id @default(uuid())
+  learner_id         String    @unique
+  current_days       Int       @default(0)
+  longest_days       Int       @default(0)
+  last_activity_date DateTime?
+  updated_at         DateTime  @updatedAt
+
+  learner Learner @relation(fields: [learner_id], references: [id], onDelete: Cascade)
+
+  @@map("streaks")
+}
+
+// ─── BuddyRelation ───────────────────────────────────────
+// Refs: SPEC.md §11 US-2b.3
+model BuddyRelation {
+  id          String    @id @default(uuid())
+  learner_id  String
+  buddy_id    String
+  accepted    Boolean   @default(false)
+  accepted_at DateTime?
+  created_at  DateTime  @default(now())
+
+  @@unique([learner_id, buddy_id])
+  @@index([learner_id])
+  @@map("buddy_relations")
+}
+
+// ─── TeamChallenge ───────────────────────────────────────
+// Refs: SPEC.md §11 US-2b.4
+model TeamChallenge {
+  id            String   @id @default(uuid())
+  title_fr      String
+  team_ids      String[]
+  competence_id String
+  starts_at     DateTime
+  ends_at       DateTime
+  status        String   @default("active") // "active" | "completed" | "cancelled"
+  created_at    DateTime @default(now())
+
+  @@index([status])
+  @@map("team_challenges")
+}
+
+// ─── Notification ────────────────────────────────────────
+// Refs: SPEC.md §11 US-2b.5
+model Notification {
+  id         String   @id @default(uuid())
+  learner_id String
+  type       String   // "streak_reminder" | "stamp_expiring" | "buddy_request" | "challenge_result"
+  payload    Json
+  read       Boolean  @default(false)
+  created_at DateTime @default(now())
+
+  @@index([learner_id])
+  @@index([learner_id, read])
+  @@map("notifications")
+}
+
+// ─── DocumentEmbedding ───────────────────────────────────
+// Refs: SPEC.md §9 R-3.2 — RAG Phase 3, pgvector
+model DocumentEmbedding {
+  id          String   @id @default(uuid())
+  document_id String
+  page        Int      @default(1)
+  chunk_text  String
+  // vecteur 1536 dims stocke via raw SQL pgvector
+  created_at  DateTime @default(now())
+
+  @@index([document_id])
+  @@map("document_embeddings")
+}
+
+// ─── DomainEvent ─────────────────────────────────────────
+// Refs: SPEC.md §8 — append-only, jamais mute ni supprime
+model DomainEvent {
+  id             String   @id @default(uuid())
+  event_name     String
+  event_version  String
+  occurred_at    DateTime @default(now())
+  produced_by    String
+  correlation_id String?
+  payload        Json
+
+  @@index([event_name])
+  @@index([occurred_at])
+  @@map("domain_events")
+}
+
+// ─── AppConfig ───────────────────────────────────────────
+// Configuration globale application (remplace les champs de Tenant)
+// Cles predefinies : "stamp_validity_months", "mastery_window", "llm_provider",
+//   "llm_model", "llm_api_key_ref", "llm_max_tokens_per_call", "llm_max_tokens_per_user_day"
+model AppConfig {
+  key        String   @id // unique par convention
+  value      Json
+  updated_at DateTime @updatedAt
+
+  @@map("app_config")
+}

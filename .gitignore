@@ -1,0 +1,36 @@
+# deps
+node_modules/
+
+# builds
+dist/
+.next/
+*.tsbuildinfo
+
+# turbo cache
+.turbo/
+
+# env secrets — NEVER commit
+.env
+.env.local
+.env.*.local
+.env.production
+.env.staging
+
+# logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE (project-specific settings only — not global)
+.vscode/settings.json
+.idea/
+
+# uploads locaux (avant migration S3 — Phase 2a)
+uploads/
+
+# prisma
+*.db-journal
