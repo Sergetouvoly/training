@@ -1,16 +1,15 @@
-// Refs: SPEC.md §7 — espace formateur : modules assignés + suivi apprenants
+// Refs: SPEC.md §7, docs/BACKLOG.md §2b — espace formateur : modules + suivi.
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { auth } from "../../../auth";
 import { getApiClient } from "../../../lib/api";
+import { canAccessTrainerSpace } from "../../../lib/permissions";
 import { LessonsPerModuleChart, StampsStateChart } from "../admin/AdminCharts";
-
-const TRAINER_ROLES = new Set(["super_admin", "admin", "trainer"]);
 
 export default async function TrainerPage() {
   const session = await auth();
   const platformRole = (session as any)?.platformRole as string ?? "learner";
-  if (!TRAINER_ROLES.has(platformRole)) redirect("/dashboard");
+  if (!canAccessTrainerSpace(platformRole)) redirect("/dashboard");
 
   const api = await getApiClient();
   const [modules, learners] = await Promise.all([

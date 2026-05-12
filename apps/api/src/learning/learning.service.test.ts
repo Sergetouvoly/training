@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { NotFoundException } from "@nestjs/common";
+import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { LearningService } from "./learning.service.js";
 
-// Refs: SPEC.md §3 L1, §11 US-1.2, US-1.5
+// Refs: SPEC.md §3 L1, §11 US-1.2, US-1.5, SPEC-CONTENT.md §7.5
 
 function makePrismaStub() {
   return {
@@ -18,6 +18,9 @@ function makePrismaStub() {
       findFirst: vi.fn(),
       findMany: vi.fn(),
       update: vi.fn(),
+    },
+    domainEvent: {
+      create: vi.fn().mockResolvedValue({}),
     },
   } as any;
 }
@@ -139,5 +142,47 @@ describe("LearningService", () => {
       where: { id: "m1" },
       data: { content_fr: { lessons: [] } },
     });
+  });
+
+  // ─── publishModule (SPEC-CONTENT §7.5, SPEC §8) ───────────
+
+  it("publishModule — passe status à published, recalcule version_hash, émet ModulePublished", async () => {
+    const content = { lessons: [{ id: "l1", title_fr: "Intro", blocks: [] }] };
+    prisma.module.findFirst.mockResolvedValue({ id: "m1", status: "draft", content_fr: content, version: "1.0.0" });
+    prisma.module.update.mockResolvedValue({ id: "m1", status: "published" });
+
+    await service.publishModule("m1", "u-admin");
+
+    const updateCall = prisma.module.update.mock.calls[0][0];
+    expect(updateCall.data.status).toBe("published");
+    expect(updateCall.data.version_hash).toMatch(/^[a-f0-9]{64}$/); // SHA-256 hex
+    expect(prisma.domainEvent.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ event_name: "ModulePublished" }),
+      }),
+    );
+  });
+
+  it("publishModule — lève NotFoundException si module inconnu", async () => {
+    prisma.module.findFirst.mockResolvedValue(null);
+    await expect(service.publishModule("ghost", "u-admin")).rejects.toThrow(NotFoundException);
+  });
+
+  it("publishModule — lève ForbiddenException si module déjà publié", async () => {
+    prisma.module.findFirst.mockResolvedValue({ id: "m1", status: "published", content_fr: {}, version: "1.0.0" });
+    await expect(service.publishModule("m1", "u-admin")).rejects.toThrow(ForbiddenException);
+  });
+
+  it("publishModule — version_hash est SHA-256 du content_fr JSON stringifié", async () => {
+    const { createHash } = await import("node:crypto");
+    const content = { lessons: [] };
+    prisma.module.findFirst.mockResolvedValue({ id: "m1", status: "draft", content_fr: content, version: "1.0.0" });
+    prisma.module.update.mockResolvedValue({ id: "m1" });
+
+    await service.publishModule("m1", "u-admin");
+
+    const expected = createHash("sha256").update(JSON.stringify(content)).digest("hex");
+    const updateCall = prisma.module.update.mock.calls[0][0];
+    expect(updateCall.data.version_hash).toBe(expected);
   });
 });

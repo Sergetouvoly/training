@@ -2,6 +2,7 @@
 import { Injectable, UnauthorizedException } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import * as bcrypt from "bcryptjs";
+import speakeasy from "speakeasy";
 import { PrismaService } from "../prisma/prisma.service.js";
 import type { PlatformRole, SessionPayload } from "./auth.types.js";
 
@@ -32,15 +33,21 @@ export class AuthService {
       throw new UnauthorizedException("Invalid credentials");
     }
 
-    // MFA : si active, le code TOTP est obligatoire (speakeasy a brancher Phase 1)
+    // MFA : si activée, valider le code TOTP avec speakeasy
+    let mfa_verified = !user.mfa_enabled;
     if (user.mfa_enabled) {
       if (!dto.mfa_code || !/^\d{6}$/.test(dto.mfa_code)) {
         throw new UnauthorizedException("MFA code required");
       }
+      const valid = speakeasy.totp.verify({
+        secret: user.mfa_secret!,
+        encoding: "base32",
+        token: dto.mfa_code,
+        window: 1,
+      });
+      if (!valid) throw new UnauthorizedException("Invalid MFA code");
+      mfa_verified = true;
     }
-
-    // mfa_verified = true si MFA non activée (pas d'obstacle) ou si le code TOTP vient d'être validé
-    const mfa_verified = !user.mfa_enabled;
 
     await this.prisma.user.update({
       where: { id: user.id },

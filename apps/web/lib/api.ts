@@ -50,9 +50,9 @@ export async function getApiClient() {
   };
 }
 
-export async function getPlatformRole(): Promise<string | null> {
+export async function getPlatformRole(): Promise<string> {
   const jwt = await getJwt();
-  return (jwt as any)?.platformRole as string ?? null;
+  return (jwt as any)?.platformRole as string ?? "";
 }
 
 export async function getDisplayName(): Promise<string> {

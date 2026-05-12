@@ -1,11 +1,10 @@
-// Refs: SPEC.md §7 — espace manager : vue équipe + progression agrégée
+// Refs: SPEC.md §7, docs/BACKLOG.md §2b — espace manager : vue équipe.
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { auth } from "../../../auth";
 import { getApiClient } from "../../../lib/api";
+import { canAccessManagerSpace } from "../../../lib/permissions";
 import { TeamValidationChart, StampsStateChart } from "../admin/AdminCharts";
-
-const MANAGER_ROLES = new Set(["super_admin", "admin", "manager"]);
 
 const JOB_LABELS: Record<string, string> = {
   hr: "RH", developer: "Développeur", manager: "Manager", finance: "Finance",
@@ -14,7 +13,7 @@ const JOB_LABELS: Record<string, string> = {
 export default async function ManagerPage() {
   const session = await auth();
   const platformRole = (session as any)?.platformRole as string ?? "learner";
-  if (!MANAGER_ROLES.has(platformRole)) redirect("/dashboard");
+  if (!canAccessManagerSpace(platformRole)) redirect("/dashboard");
 
   const api = await getApiClient();
   const learners = await api.user.listLearners().catch(() => [] as Awaited<ReturnType<typeof api.user.listLearners>>);

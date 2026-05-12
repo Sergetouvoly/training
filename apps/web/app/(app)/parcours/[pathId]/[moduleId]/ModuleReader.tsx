@@ -1,10 +1,11 @@
 "use client";
 // Refs: SPEC-CONTENT.md §5, SPEC.md §8 US-1.2
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect, useLayoutEffect } from "react";
 import { useSession } from "next-auth/react";
 import type {
   Module, Lesson, Block, InlineContent,
   EvaluationItem, MiniQuizBlock as MiniQuizBlockType,
+  VideoBlock as VideoBlockType,
 } from "@elearning/api-client";
 
 // ── Utilitaires ───────────────────────────────────────────────────────────────
@@ -58,6 +59,20 @@ function renderInline(nodes: InlineContent[]): React.ReactNode {
   });
 }
 
+// ── Placeholder pour les médias non configurés ─────────────────────────────
+// Évite les crash <source src=""> et les iframes vides qui rechargent la page.
+
+function MediaPlaceholder({ label }: { readonly label: string }) {
+  return (
+    <div className="rounded-xl border border-dashed border-surface-warm bg-surface px-5 py-6 text-center">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="mx-auto mb-2 text-ink-soft" aria-hidden="true">
+        <rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="3" x2="21" y2="21"/>
+      </svg>
+      <p className="text-sm text-ink-soft">{label}</p>
+    </div>
+  );
+}
+
 // ── Rendus des blocs ──────────────────────────────────────────────────────────
 
 function BlockRenderer({ block }: { readonly block: Block }) {
@@ -108,14 +123,22 @@ function BlockRenderer({ block }: { readonly block: Block }) {
         </blockquote>
       );
 
-    case "image":
+    case "image": {
+      const imgWidth = (block as any).width as number | undefined;
+      const imgAlign = (block as any).align as "left" | "center" | "right" | undefined ?? "center";
+      const figStyle: React.CSSProperties = imgWidth
+        ? { width: imgWidth, maxWidth: "100%" }
+        : { maxWidth: "100%" };
+      if (imgAlign === "left")        { figStyle.float = "left";  figStyle.marginRight = "1.5rem"; figStyle.marginBottom = "0.5rem"; }
+      else if (imgAlign === "right")  { figStyle.float = "right"; figStyle.marginLeft  = "1.5rem"; figStyle.marginBottom = "0.5rem"; }
+      else                            { figStyle.marginLeft = "auto"; figStyle.marginRight = "auto"; figStyle.display = "block"; }
       return (
-        <figure className={`${block.width === "inline" ? "max-w-md mx-auto" : block.width === "wide" ? "max-w-4xl -mx-8" : "w-full"}`}>
+        <figure style={figStyle}>
           <img
             src={block.url}
             alt={block.alt}
             loading="lazy"
-            className="w-full rounded-xl border border-surface-warm object-cover"
+            className="w-full h-auto rounded-xl border border-surface-warm"
           />
           {block.caption && (
             <figcaption className="mt-2 text-center text-sm text-ink-soft italic">
@@ -124,8 +147,10 @@ function BlockRenderer({ block }: { readonly block: Block }) {
           )}
         </figure>
       );
+    }
 
     case "audio":
+      if (!block.url) return <MediaPlaceholder label="Audio non configuré" />;
       return (
         <div className="rounded-xl border border-surface-warm bg-surface px-5 py-4">
           <div className="flex items-center gap-3 mb-3">
@@ -143,14 +168,36 @@ function BlockRenderer({ block }: { readonly block: Block }) {
               )}
             </div>
           </div>
-          <audio controls preload="none" className="w-full" aria-label={block.title}>
-            <source src={block.url} />
+          <audio controls preload="none" className="w-full" aria-label={block.title} src={block.url}>
             Votre navigateur ne supporte pas la lecture audio.
           </audio>
         </div>
       );
 
+    case "video": {
+      const vb = block as unknown as VideoBlockType;
+      if (!vb.url) return <MediaPlaceholder label="Vidéo non configurée" />;
+      return (
+        <figure>
+          <video
+            controls
+            preload="metadata"
+            src={vb.url}
+            className="w-full rounded-xl border border-surface-warm bg-black"
+            style={{ maxHeight: "480px" }}
+            aria-label={vb.title}
+          />
+          {(vb.title || vb.caption) && (
+            <figcaption className="mt-2 text-center text-sm text-ink-soft italic">
+              {vb.caption ?? vb.title}
+            </figcaption>
+          )}
+        </figure>
+      );
+    }
+
     case "video_embed": {
+      if (!block.video_id) return <MediaPlaceholder label="Vidéo non configurée" />;
       const src = block.provider === "youtube"
         ? `https://www.youtube-nocookie.com/embed/${block.video_id}`
         : `https://player.vimeo.com/video/${block.video_id}`;
@@ -176,6 +223,7 @@ function BlockRenderer({ block }: { readonly block: Block }) {
     }
 
     case "file":
+      if (!block.url) return <MediaPlaceholder label="Fichier non configuré" />;
       return (
         <a
           href={block.url}
@@ -428,8 +476,8 @@ function MiniQuizBlock({ block }: { readonly block: MiniQuizBlockType }) {
 
 // Blocs rendus hors du wrapper prose-holenek (ont leur propre style)
 const READER_SPECIAL_TYPES = new Set([
-  "callout","audio","video_embed","file","scenario","key_takeaway","mini_quiz",
-  "image","code","table","divider","bullet_list","ordered_list","blockquote",
+  "callout","audio","video","video_embed","file","scenario","key_takeaway","mini_quiz",
+  "code","table",
 ]);
 
 function renderBlocks(blocks: Block[]): React.ReactNode {
@@ -448,39 +496,13 @@ function renderBlocks(blocks: Block[]): React.ReactNode {
   return segs.map((seg, si) => {
     if (seg.kind === "special") return <BlockRenderer key={`s-${si}`} block={seg.block} />;
     return (
-      <div key={`t-${si}`} className="prose-holenek">
+      <div key={`t-${si}`} className="prose-holenek" style={{ overflow: "hidden" }}>
         {seg.items.map((block) => <BlockRenderer key={block.id} block={block} />)}
       </div>
     );
   });
 }
 
-// ── Lecteur audio résumé (sidebar) ───────────────────────────────────────────
-
-function AudioSummaryPlayer({ url }: { readonly url: string }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="mt-4 border-t border-surface-warm pt-4">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-2 rounded-lg bg-primary/5 border border-primary/20 px-3 py-2.5 text-xs font-semibold text-primary hover:bg-primary/10 transition-colors"
-      >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-          <polygon points="5 3 19 12 5 21 5 3"/>
-        </svg>
-        Écouter le résumé du module
-      </button>
-      {open && (
-        <div className="mt-2">
-          <audio controls preload="none" className="w-full h-8" style={{ height: 36 }} aria-label="Résumé audio du module">
-            <source src={url} />
-          </audio>
-        </div>
-      )}
-    </div>
-  );
-}
 
 // ── Quiz final ────────────────────────────────────────────────────────────────
 
@@ -599,6 +621,18 @@ function Quiz({ items, moduleId, moduleVersionHash, pathId, onComplete }: QuizPr
     );
   }
 
+  if (items.length === 0) {
+    return (
+      <div className="max-w-2xl rounded-2xl border border-dashed border-surface-warm bg-surface p-10 text-center">
+        <p className="text-base font-semibold text-primary-deep">Quiz indisponible</p>
+        <p className="mt-2 text-sm text-ink-soft">
+          Aucune question n'a été créée pour ce module.
+          Contactez votre formateur ou administrateur.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-2xl">
       <div className="mb-8 flex items-center justify-between">
@@ -670,17 +704,29 @@ export function ModuleReader({ pathId, module, quizItems }: Props) {
   const { data: session } = useSession();
   const lessons = module.content_fr?.lessons ?? [];
   const totalLessons = lessons.length;
-  const audioSummaryUrl = module.content_fr?.audio_summary_url;
+  const unlockMode = module.content_fr?.lesson_unlock_mode ?? "free";
 
+  // En mode libre, "voir = lu" → la leçon courante est marquée d'office.
+  // En mode séquentiel, rien n'est lu : l'apprenant doit scroller + cliquer "Marquer comme lu".
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [readLessons, setReadLessons] = useState<Set<number>>(new Set([0]));
+  const [readLessons, setReadLessons] = useState<Set<number>>(
+    () => unlockMode === "sequential" ? new Set() : new Set([0]),
+  );
   const [showQuiz, setShowQuiz] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
+  const lessonEndRef = useRef<HTMLDivElement>(null);
+  const [scrolledToEnd, setScrolledToEnd] = useState(false);
 
   const allRead = totalLessons > 0 && readLessons.size >= totalLessons;
+  const quizAvailable = quizItems.length > 0;
+  const canTakeQuiz = allRead && quizAvailable;
   const currentLesson = lessons[currentIndex] as Lesson | undefined;
   const progressPct = Math.round((readLessons.size / Math.max(totalLessons, 1)) * 100);
+
+  function isLocked(i: number): boolean {
+    return unlockMode === "sequential" && i > 0 && !readLessons.has(i - 1);
+  }
 
   async function saveProgress(pct: number) {
     const token = (session as any)?.accessToken as string | undefined;
@@ -698,19 +744,79 @@ export function ModuleReader({ pathId, module, quizItems }: Props) {
   }
 
   function goTo(index: number) {
+    if (isLocked(index)) return;
     setCurrentIndex(index);
+    setScrolledToEnd(false);
+    // Mode libre uniquement : voir = lu (rétrocompat).
+    // Mode séquentiel : on attend le clic explicite "Marquer comme lu".
+    if (unlockMode === "free") {
+      setReadLessons((prev) => {
+        if (prev.has(index)) return prev;
+        const next = new Set([...prev, index]);
+        const pct = Math.round((next.size / Math.max(totalLessons, 1)) * 100);
+        void saveProgress(pct);
+        return next;
+      });
+    }
+    // Le scroll reset est géré par un useEffect dépendant de currentIndex,
+    // pour s'exécuter APRÈS le re-render du nouveau contenu (sinon on scrolle
+    // sur l'ancienne leçon avant le swap).
+  }
+
+  function markCurrentAsRead() {
     setReadLessons((prev) => {
-      const next = new Set([...prev, index]);
+      if (prev.has(currentIndex)) return prev;
+      const next = new Set([...prev, currentIndex]);
       const pct = Math.round((next.size / Math.max(totalLessons, 1)) * 100);
       void saveProgress(pct);
       return next;
     });
-    contentRef.current?.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   function next() {
     if (currentIndex < totalLessons - 1) goTo(currentIndex + 1);
   }
+
+  // Reset du scroll quand on change de leçon. Le scroller réel est window
+  // (le layout n'impose pas de hauteur fixe à contentRef, donc flex-1
+  // overflow-y-auto ne crée pas de scroller — c'est <html>/<body> qui scrolle).
+  // useLayoutEffect garantit l'exécution après commit DOM et avant paint.
+  useLayoutEffect(() => {
+    window.scrollTo({ top: 0, behavior: "auto" });
+  }, [currentIndex, showQuiz]);
+
+  // Détection scroll en bas : IntersectionObserver sur une sentinelle placée
+  // après le contenu. Plus robuste que scrollTop + clientHeight (gère zoom,
+  // marges, sticky footer). En complément : si le contenu tient sur 1 écran
+  // (scrollHeight ≤ clientHeight + 50px), on débloque d'emblée.
+  useEffect(() => {
+    setScrolledToEnd(false);
+    if (unlockMode !== "sequential") return;
+    if (readLessons.has(currentIndex)) { setScrolledToEnd(true); return; }
+
+    const sentinel = lessonEndRef.current;
+    if (!sentinel) return;
+
+    // Contenu court : pas besoin de scroller. On compare la hauteur totale
+    // du document au viewport (puisque le scroll est sur window).
+    const shortContent = document.documentElement.scrollHeight <= window.innerHeight + 50;
+    if (shortContent) { setScrolledToEnd(true); return; }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.intersectionRatio >= 0.9 || entry.isIntersecting) {
+            setScrolledToEnd(true);
+            observer.disconnect();
+            return;
+          }
+        }
+      },
+      { root: null, threshold: [0.9, 1] }, // null = viewport
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [currentIndex, unlockMode, readLessons]);
 
   function prev() {
     if (currentIndex > 0) goTo(currentIndex - 1);
@@ -743,17 +849,21 @@ export function ModuleReader({ pathId, module, quizItems }: Props) {
                 {lessons.map((lesson, i) => {
                   const isActive = i === currentIndex && !showQuiz;
                   const isDone = readLessons.has(i) && i !== currentIndex;
+                  const locked = isLocked(i);
                   return (
                     <li key={lesson.id}>
                       <button
                         type="button"
-                        onClick={() => { setShowQuiz(false); goTo(i); }}
-                        title={lesson.title_fr}
+                        onClick={() => { if (!locked) { setShowQuiz(false); goTo(i); } }}
+                        title={locked ? "Terminez la leçon précédente pour débloquer" : lesson.title_fr}
+                        disabled={locked}
                         className={`flex h-8 w-8 items-center justify-center rounded-full text-[11px] font-bold transition-colors ${
-                          isActive ? "bg-primary text-white" : isDone ? "bg-primary/10 text-primary" : "text-ink-soft hover:bg-surface"
+                          locked ? "text-ink-soft/40 cursor-not-allowed" : isActive ? "bg-primary text-white" : isDone ? "bg-primary/10 text-primary" : "text-ink-soft hover:bg-surface"
                         }`}
                       >
-                        {isDone ? (
+                        {locked ? (
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                        ) : isDone ? (
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
                         ) : (i + 1)}
                       </button>
@@ -794,7 +904,6 @@ export function ModuleReader({ pathId, module, quizItems }: Props) {
                 </div>
                 <span className="text-xs font-bold text-primary tabular-nums">{progressPct}%</span>
               </div>
-              {audioSummaryUrl && <AudioSummaryPlayer url={audioSummaryUrl} />}
             </div>
 
             <nav aria-label="Modules du parcours" className="flex-1 overflow-y-auto px-4 py-3">
@@ -805,19 +914,26 @@ export function ModuleReader({ pathId, module, quizItems }: Props) {
                 {lessons.map((lesson, i) => {
                   const isActive = i === currentIndex && !showQuiz;
                   const isDone = readLessons.has(i) && i !== currentIndex;
+                  const locked = isLocked(i);
                   return (
                     <li key={lesson.id}>
                       <button
                         type="button"
-                        onClick={() => { setShowQuiz(false); goTo(i); }}
+                        onClick={() => { if (!locked) { setShowQuiz(false); goTo(i); } }}
+                        disabled={locked}
+                        title={locked ? "Terminez la leçon précédente pour débloquer" : undefined}
                         className={`w-full rounded-lg px-3 py-2.5 text-left text-xs leading-snug transition-colors flex items-start gap-2.5 ${
-                          isActive
-                            ? "bg-primary text-white font-semibold"
-                            : "text-ink hover:bg-surface"
+                          locked
+                            ? "opacity-50 cursor-not-allowed text-ink"
+                            : isActive
+                              ? "bg-primary text-white font-semibold"
+                              : "text-ink hover:bg-surface"
                         }`}
                       >
                         <span className="shrink-0 mt-0.5">
-                          {isDone ? (
+                          {locked ? (
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                          ) : isDone ? (
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-primary" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
                           ) : (
                             <span className={`flex h-4 w-4 items-center justify-center rounded-full border text-[10px] font-bold ${isActive ? "border-white text-white" : "border-ink-soft/40 text-ink-soft"}`}>{i + 1}</span>
@@ -834,17 +950,20 @@ export function ModuleReader({ pathId, module, quizItems }: Props) {
             <div className="px-4 py-4 border-t border-surface-warm">
               <button
                 type="button"
-                onClick={() => allRead && setShowQuiz(true)}
-                disabled={!allRead}
+                onClick={() => canTakeQuiz && setShowQuiz(true)}
+                disabled={!canTakeQuiz}
+                title={!quizAvailable ? "Aucune question n'a été créée pour ce module" : undefined}
                 className={`w-full rounded-xl px-4 py-3 text-xs font-bold transition-all ${
-                  allRead
+                  canTakeQuiz
                     ? "bg-primary text-white hover:bg-primary-deep shadow-sm"
                     : "bg-surface text-ink-soft cursor-not-allowed"
                 }`}
               >
-                {allRead
-                  ? "Passer le quiz final →"
-                  : `Quiz — ${readLessons.size} / ${totalLessons} modules lus`}
+                {!quizAvailable
+                  ? "Quiz indisponible"
+                  : allRead
+                    ? "Passer le quiz final →"
+                    : `Quiz — ${readLessons.size} / ${totalLessons} modules lus`}
               </button>
             </div>
           </>
@@ -920,7 +1039,10 @@ export function ModuleReader({ pathId, module, quizItems }: Props) {
                   )}
                 </div>
 
-                <div className="mt-16 flex items-center justify-between gap-4 border-t border-surface-warm pt-8">
+                {/* Sentinelle de fin de contenu — observée par IntersectionObserver */}
+                <div ref={lessonEndRef} aria-hidden="true" className="h-px w-full" />
+
+                <div className="mt-10 flex items-center justify-between gap-4 border-t border-surface-warm pt-8">
                   <button
                     type="button"
                     onClick={prev}
@@ -931,28 +1053,53 @@ export function ModuleReader({ pathId, module, quizItems }: Props) {
                     Précédent
                   </button>
 
-                  {currentIndex < totalLessons - 1 ? (
-                    <button
-                      type="button"
-                      onClick={next}
-                      className="flex items-center gap-2 rounded-xl bg-primary px-6 py-3 text-sm font-bold text-white transition hover:bg-primary-deep shadow-sm"
-                    >
-                      Module suivant
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => setShowQuiz(true)}
-                      className="flex items-center gap-2 rounded-xl bg-primary px-6 py-3 text-sm font-bold text-white transition hover:bg-primary-deep shadow-sm"
-                    >
-                      Terminer &amp; passer le quiz
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-                    </button>
-                  )}
+                  {(() => {
+                    // En séquentiel : pas de passage avant d'avoir cliqué "Marquer comme lu".
+                    const currentIsRead = readLessons.has(currentIndex);
+                    const blocked = unlockMode === "sequential" && !currentIsRead;
+                    const blockedTitle = "Marquez d'abord cette leçon comme lue";
+
+                    if (currentIndex < totalLessons - 1) {
+                      return (
+                        <button
+                          type="button"
+                          onClick={next}
+                          disabled={blocked}
+                          title={blocked ? blockedTitle : undefined}
+                          className={`flex items-center gap-2 rounded-xl px-6 py-3 text-sm font-bold transition shadow-sm ${
+                            blocked
+                              ? "bg-surface-warm text-ink-soft cursor-not-allowed"
+                              : "bg-primary text-white hover:bg-primary-deep"
+                          }`}
+                        >
+                          Module suivant
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                        </button>
+                      );
+                    }
+                    if (quizAvailable) {
+                      return (
+                        <button
+                          type="button"
+                          onClick={() => !blocked && setShowQuiz(true)}
+                          disabled={blocked}
+                          title={blocked ? blockedTitle : undefined}
+                          className={`flex items-center gap-2 rounded-xl px-6 py-3 text-sm font-bold transition shadow-sm ${
+                            blocked
+                              ? "bg-surface-warm text-ink-soft cursor-not-allowed"
+                              : "bg-primary text-white hover:bg-primary-deep"
+                          }`}
+                        >
+                          Terminer &amp; passer le quiz
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                        </button>
+                      );
+                    }
+                    return <span className="text-xs italic text-ink-soft">Module terminé · quiz indisponible</span>;
+                  })()}
                 </div>
 
-                {allRead && (
+                {canTakeQuiz && (
                   <div className="mt-4 md:hidden">
                     <button type="button" onClick={() => setShowQuiz(true)} className="w-full rounded-xl bg-primary px-5 py-3 text-sm font-bold text-white">
                       Passer le quiz →
@@ -980,7 +1127,108 @@ export function ModuleReader({ pathId, module, quizItems }: Props) {
               </div>
             )}
           </div>
+
+          {/* Barre sticky "Marquer comme lu" — mode séquentiel uniquement, hors quiz */}
+          {!showQuiz && currentLesson && unlockMode === "sequential" && (
+            <MarkAsReadBar
+              isRead={readLessons.has(currentIndex)}
+              ready={scrolledToEnd}
+              onMark={markCurrentAsRead}
+            />
+          )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Barre sticky "Marquer comme lu" ─────────────────────────────────────────
+// Ancrée en bas de la zone de lecture, change d'état selon la progression.
+
+function MarkAsReadBar({
+  isRead, ready, onMark,
+}: {
+  readonly isRead: boolean;
+  readonly ready: boolean;
+  readonly onMark: () => void;
+}) {
+  // État terminé — bandeau succès discret
+  if (isRead) {
+    return (
+      <div className="sticky bottom-0 z-30 mt-4 border-t border-green-200 bg-gradient-to-r from-green-50 via-green-50 to-green-50/80 backdrop-blur-md">
+        <div className="mx-auto flex max-w-5xl items-center justify-center gap-2.5 px-4 py-3 sm:px-8">
+          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-green-600 text-white shadow-sm">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+          </div>
+          <p className="text-sm font-semibold text-green-800">Leçon terminée</p>
+          <span className="text-sm text-green-700/70 hidden sm:inline">— Passez à la suivante quand vous voulez.</span>
+        </div>
+      </div>
+    );
+  }
+
+  // États en cours — barre principale
+  return (
+    <div className="sticky bottom-0 z-30 mt-4 border-t border-surface-warm bg-white/90 backdrop-blur-md shadow-[0_-4px_16px_-8px_rgba(0,0,0,0.08)]">
+      {/* Liseré de progression visuelle */}
+      <div className="h-1 w-full bg-surface-warm/60">
+        <div
+          className={`h-full transition-all duration-500 ${ready ? "bg-primary" : "bg-primary/40"}`}
+          style={{ width: ready ? "100%" : "35%" }}
+          aria-hidden="true"
+        />
+      </div>
+
+      <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-3 sm:px-8 sm:py-4">
+        {/* Texte + icône d'état */}
+        <div className="flex items-center gap-3 min-w-0">
+          <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-colors ${
+            ready ? "bg-primary/10 text-primary" : "bg-surface-warm text-ink-soft"
+          }`}>
+            {ready ? (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+            ) : (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20M4 19.5V5A2.5 2.5 0 0 1 6.5 2.5H20v17H6.5A2.5 2.5 0 0 1 4 19.5z"/></svg>
+            )}
+          </div>
+          <div className="min-w-0">
+            <p className={`text-sm font-bold leading-tight ${ready ? "text-primary-deep" : "text-ink"}`}>
+              {ready ? "Vous êtes au bout de la leçon" : "Continuez votre lecture"}
+            </p>
+            <p className="mt-0.5 text-xs text-ink-soft leading-snug">
+              {ready
+                ? "Cliquez pour terminer et débloquer la leçon suivante."
+                : "Scrollez jusqu'en bas pour pouvoir terminer la leçon."}
+            </p>
+          </div>
+        </div>
+
+        {/* Bouton principal */}
+        <button
+          type="button"
+          onClick={onMark}
+          disabled={!ready}
+          aria-disabled={!ready}
+          title={ready ? "Terminer cette leçon" : "Scrollez jusqu'en bas pour activer"}
+          className={`group relative shrink-0 inline-flex items-center gap-2 overflow-hidden rounded-xl px-5 py-2.5 text-sm font-bold transition-all ${
+            ready
+              ? "bg-primary text-white shadow-md hover:bg-primary-deep hover:shadow-lg active:scale-[0.98]"
+              : "bg-surface-warm text-ink-soft cursor-not-allowed"
+          }`}
+        >
+          {ready ? (
+            <>
+              <span className="absolute inset-0 -z-0 animate-pulse bg-primary/0 group-hover:bg-white/10" aria-hidden="true" />
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+              Terminer la leçon
+            </>
+          ) : (
+            <>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+              Validation verrouillée
+            </>
+          )}
+        </button>
       </div>
     </div>
   );

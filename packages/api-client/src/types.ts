@@ -55,7 +55,8 @@ export interface ImageBlock {
   url: string;
   alt: string;
   caption?: string;
-  width?: "full" | "wide" | "inline";
+  width?: number | "full" | "wide" | "inline";
+  align?: "left" | "center" | "right";
 }
 
 export interface AudioBlock {
@@ -72,6 +73,15 @@ export interface VideoEmbedBlock {
   provider: "youtube" | "vimeo";
   video_id: string;
   caption?: string;
+}
+
+export interface VideoBlock {
+  id: string;
+  type: "video";
+  url: string;
+  title: string;
+  caption?: string;
+  mime?: string;
 }
 
 export interface FileBlock {
@@ -142,6 +152,7 @@ export type Block =
   | BlockquoteBlock
   | ImageBlock
   | AudioBlock
+  | VideoBlock
   | VideoEmbedBlock
   | FileBlock
   | CalloutBlock
@@ -167,6 +178,7 @@ export interface ModuleContent {
   audio_summary_url?: string;
   quiz_unlock_condition: "all_lessons_read";
   estimated_duration_minutes: number;
+  lesson_unlock_mode?: "free" | "sequential";
 }
 
 // ── Entités principales ───────────────────────────────────────────────────────
@@ -187,8 +199,10 @@ export interface Module {
   version: string;
   version_hash: string;
   title_fr: string;
+  status: "draft" | "published";
   competence_ids: string[];
   content_fr: ModuleContent | null;
+  estimated_duration_minutes: number | null;
   created_at: string;
 }
 

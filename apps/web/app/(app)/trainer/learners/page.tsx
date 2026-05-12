@@ -1,16 +1,9 @@
-// Refs: SPEC.md §7 — formateur : liste complète de ses apprenants
-import { redirect } from "next/navigation";
+// Refs: SPEC.md §7 — formateur : liste complète de ses apprenants.
+// La garde de rôle est assurée par le trainer/layout.tsx (canAccessTrainerSpace).
 import Link from "next/link";
-import { auth } from "../../../../auth";
 import { getApiClient } from "../../../../lib/api";
 
-const TRAINER_ROLES = new Set(["super_admin", "admin", "trainer"]);
-
 export default async function TrainerLearnersPage() {
-  const session = await auth();
-  const platformRole = (session as any)?.platformRole as string ?? "learner";
-  if (!TRAINER_ROLES.has(platformRole)) redirect("/dashboard");
-
   const api = await getApiClient();
   const learners = await api.user.listLearners().catch(() => [] as Awaited<ReturnType<typeof api.user.listLearners>>);
 

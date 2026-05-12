@@ -14,9 +14,8 @@
     "noEmit": true,
     "incremental": true,
     "paths": {
-      "@/*": [
-        "./app/*"
-      ]
+      "@/*": ["./app/*"],
+      "@lib/*": ["./lib/*"]
     },
     "allowJs": true
   },

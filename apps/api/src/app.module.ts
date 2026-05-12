@@ -10,6 +10,7 @@ import { AppConfigModule } from "./app-config/app-config.module.js";
 import { SimulatorModule } from "./simulator/simulator.module.js";
 import { SocialModule } from "./social/social.module.js";
 import { AiModule } from "./ai/ai.module.js";
+import { MediaModule } from "./media/media.module.js";
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { AiModule } from "./ai/ai.module.js";
     SimulatorModule,
     SocialModule,
     AiModule,
+    MediaModule,
   ],
 })
 export class AppModule {}

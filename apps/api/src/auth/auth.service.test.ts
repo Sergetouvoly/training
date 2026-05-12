@@ -3,6 +3,7 @@ import { UnauthorizedException } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { AuthService } from "./auth.service.js";
 import bcrypt from "bcryptjs";
+import speakeasy from "speakeasy";
 
 // Refs: SPEC.md §11 US-1.1 — login email/password, JWT contient le bon platform_role
 
@@ -65,7 +66,7 @@ describe("AuthService — login", () => {
       expect(jwtPayload.platform_role).toBe(role);
       expect(jwtPayload.user_id).toBe(user.id);
       expect(jwtPayload.email).toBe(user.email);
-      expect(jwtPayload.mfa_verified).toBe(false);
+      expect(jwtPayload.mfa_verified).toBe(true); // MFA non activé → mfa_verified=true (pas d'obstacle)
     });
   }
 
@@ -100,13 +101,24 @@ describe("AuthService — login", () => {
       .rejects.toThrow(UnauthorizedException);
   });
 
-  it("accepts MFA-enabled user with valid 6-digit code, mfa_verified=true in JWT", async () => {
-    const user = makeUser("admin", { mfa_enabled: true });
+  it("accepts MFA-enabled user with valid TOTP code, mfa_verified=true in JWT", async () => {
+    const secret = speakeasy.generateSecret({ length: 20 });
+    const token = speakeasy.totp({ secret: secret.base32, encoding: "base32" });
+    const user = makeUser("admin", { mfa_enabled: true, mfa_secret: secret.base32 });
     const service = new AuthService(makePrismaStub(user), jwt);
 
-    const result = await service.login({ email: user.email, password: PASSWORD, mfa_code: "123456" });
+    const result = await service.login({ email: user.email, password: PASSWORD, mfa_code: token });
 
     expect(result.access_token).toBe("mock-token");
     expect(jwt._signed[0].mfa_verified).toBe(true);
+  });
+
+  it("rejects MFA-enabled user with wrong TOTP code", async () => {
+    const secret = speakeasy.generateSecret({ length: 20 });
+    const user = makeUser("admin", { mfa_enabled: true, mfa_secret: secret.base32 });
+    const service = new AuthService(makePrismaStub(user), jwt);
+
+    await expect(service.login({ email: user.email, password: PASSWORD, mfa_code: "000000" }))
+      .rejects.toThrow(UnauthorizedException);
   });
 });

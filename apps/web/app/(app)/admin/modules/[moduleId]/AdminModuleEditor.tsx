@@ -3,8 +3,8 @@
 import { useState, useRef, useEffect } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
-import Image from "@tiptap/extension-image";
 import Link from "@tiptap/extension-link";
+import { ResizableImage, ImageToolbarButton } from "./ResizableImageExtension";
 import Placeholder from "@tiptap/extension-placeholder";
 import Underline from "@tiptap/extension-underline";
 import TextAlign from "@tiptap/extension-text-align";
@@ -13,16 +13,25 @@ import { TextStyle } from "@tiptap/extension-text-style";
 import Highlight from "@tiptap/extension-highlight";
 import FontFamily from "@tiptap/extension-font-family";
 import { Table, TableRow, TableCell, TableHeader } from "@tiptap/extension-table";
-import type { Module, ModuleContent, Lesson, Block } from "@elearning/api-client";
+import type { Module, ModuleContent, Lesson, Block, VideoBlock } from "@elearning/api-client";
 
 // ── Conversion TipTap JSON → blocs Holenek ───────────────────────────────────
 // TipTap produit son propre format JSON. On stocke directement ce JSON dans
 // les blocs de type "paragraph"/"heading" etc. en conservant la compatibilité.
 
-function tiptapToBlocks(doc: any): Block[] {
+function tiptapToBlocks(doc: any, previousBlocks: Block[] = []): Block[] {
   if (!doc?.content) return [];
-  return doc.content.map((node: any): Block => {
-    const id = Math.random().toString(36).slice(2, 9);
+  return doc.content.map((node: any, idx: number): Block => {
+    // Réutilise l'ID existant à la même position si le type correspond.
+    // Évite les remounts React liés à des IDs/keys qui changent à chaque frappe.
+    const prev = previousBlocks[idx];
+    const typeMap: Record<string, string> = {
+      heading: "heading", bulletList: "bullet_list", orderedList: "ordered_list",
+      blockquote: "blockquote", image: "image", resizableImage: "image",
+      codeBlock: "code", horizontalRule: "divider",
+    };
+    const expectedType = typeMap[node.type] ?? "paragraph";
+    const id = (prev && prev.type === expectedType) ? prev.id : Math.random().toString(36).slice(2, 9);
     const textAlign = node.attrs?.textAlign ?? undefined;
     switch (node.type) {
       case "heading": {
@@ -37,7 +46,15 @@ function tiptapToBlocks(doc: any): Block[] {
       case "blockquote":
         return { id, type: "blockquote", content: inlineFromTiptap(node.content?.[0]?.content) };
       case "image":
-        return { id, type: "image", url: node.attrs?.src ?? "", alt: node.attrs?.alt ?? "", caption: node.attrs?.title };
+      case "resizableImage":
+        return {
+          id, type: "image",
+          url: node.attrs?.src ?? "",
+          alt: node.attrs?.alt ?? "",
+          caption: node.attrs?.title,
+          width: node.attrs?.width === 480 ? undefined : node.attrs?.width,
+          align: node.attrs?.align ?? undefined,
+        };
       case "codeBlock":
         return { id, type: "code", language: node.attrs?.language ?? "text", code: node.content?.[0]?.text ?? "" };
       case "horizontalRule":
@@ -82,7 +99,7 @@ function blocksToTiptap(blocks: Block[]): any {
         case "bullet_list": return { type: "bulletList", content: b.items.map((item) => ({ type: "listItem", content: [{ type: "paragraph", content: mapInline(item) }] })) };
         case "ordered_list":return { type: "orderedList", content: b.items.map((item) => ({ type: "listItem", content: [{ type: "paragraph", content: mapInline(item) }] })) };
         case "blockquote":  return { type: "blockquote", content: [{ type: "paragraph", content: mapInline(b.content) }] };
-        case "image":       return { type: "image", attrs: { src: b.url, alt: b.alt, title: b.caption } };
+        case "image":       return { type: "resizableImage", attrs: { src: b.url, alt: b.alt, title: b.caption, width: typeof b.width === "number" ? b.width : 480, align: b.align ?? "center" } };
         case "code":        return { type: "codeBlock", attrs: { language: b.language }, content: b.code ? [{ type: "text", text: b.code }] : [] };
         case "divider":     return { type: "horizontalRule" };
         default:            return { type: "paragraph", content: [] };
@@ -218,7 +235,7 @@ function ColorPicker({
   );
 }
 
-function Toolbar({ editor }: { readonly editor: any }) {
+function Toolbar({ editor, moduleId }: { readonly editor: any; readonly moduleId: string }) {
   if (!editor) return null;
 
   const currentColor = editor.getAttributes("textStyle")?.color;
@@ -328,7 +345,7 @@ function Toolbar({ editor }: { readonly editor: any }) {
 
       <ToolbarDivider />
 
-      <ImageUrlButton editor={editor} />
+      <ImageToolbarButton editor={editor} moduleId={moduleId} />
       <LinkButton editor={editor} />
     </div>
   );
@@ -394,19 +411,6 @@ function TableInsertButton({ editor }: { readonly editor: any }) {
   );
 }
 
-function ImageUrlButton({ editor }: { readonly editor: any }) {
-  function insert() {
-    const url = window.prompt("URL de l'image :");
-    if (!url) return;
-    const alt = window.prompt("Texte alternatif (description) :") ?? "";
-    editor.chain().focus().setImage({ src: url, alt }).run();
-  }
-  return (
-    <button type="button" onMouseDown={(e) => { e.preventDefault(); insert(); }} className="rounded px-2 py-1.5 text-xs font-medium text-ink hover:bg-surface transition-colors" title="Insérer une image">
-      🖼 Image
-    </button>
-  );
-}
 
 function LinkButton({ editor }: { readonly editor: any }) {
   function insert() {
@@ -421,19 +425,102 @@ function LinkButton({ editor }: { readonly editor: any }) {
   );
 }
 
+// ── Upload média ─────────────────────────────────────────────────────────────
+
+type UploadState = "idle" | "uploading" | "error";
+
+function useMediaUpload(moduleId: string) {
+  const [state, setState] = useState<UploadState>("idle");
+  const [error, setError] = useState("");
+
+  async function upload(
+    file: File,
+    onSuccess: (url: string, filename: string, mime: string, size: number) => void,
+  ) {
+    setState("uploading");
+    setError("");
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch(`/api/media/upload/${moduleId}`, { method: "POST", body: fd });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.message ?? "Erreur upload");
+      onSuccess(data.url, data.filename, data.mime, data.size_bytes);
+      setState("idle");
+    } catch (e: any) {
+      setError(e?.message ?? "Erreur");
+      setState("error");
+    }
+  }
+
+  return { upload, state, error };
+}
+
+function UploadButton({
+  moduleId, accept, label, onUploaded,
+}: {
+  readonly moduleId: string;
+  readonly accept: string;
+  readonly label: string;
+  readonly onUploaded: (url: string, filename: string, mime: string, size: number) => void;
+}) {
+  const { upload, state, error } = useMediaUpload(moduleId);
+  const ref = useRef<HTMLInputElement>(null);
+
+  return (
+    <div className="flex items-center gap-2">
+      <input
+        ref={ref}
+        type="file"
+        accept={accept}
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) upload(file, onUploaded);
+          e.target.value = "";
+        }}
+      />
+      <button
+        type="button"
+        disabled={state === "uploading"}
+        onClick={() => ref.current?.click()}
+        className="flex items-center gap-1.5 rounded-lg border border-dashed border-primary/40 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/5 transition-colors disabled:opacity-50"
+      >
+        {state === "uploading" ? (
+          <>
+            <svg className="animate-spin" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+            Envoi…
+          </>
+        ) : (
+          <>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/>
+              <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/>
+            </svg>
+            {label}
+          </>
+        )}
+      </button>
+      {state === "error" && <span className="text-xs text-red-500">{error}</span>}
+    </div>
+  );
+}
+
 // ── Blocs spéciaux (non-éditables via TipTap) ────────────────────────────────
 
-type SpecialBlockType = "callout" | "audio" | "video_embed" | "file" | "scenario" | "key_takeaway" | "mini_quiz";
+type SpecialBlockType = "callout" | "audio" | "video" | "video_embed" | "file" | "scenario" | "key_takeaway" | "mini_quiz";
 
 function SpecialBlockAdder({ onAdd, onAddText }: {
   readonly onAdd: (b: Block) => void;
   readonly onAddText: () => void;
+  readonly moduleId?: string;
 }) {
   const [open, setOpen] = useState(false);
 
   const types: { type: SpecialBlockType; label: string; icon: string }[] = [
     { type: "callout",      label: "Encadré (info / warning / danger)",   icon: "💡" },
-    { type: "audio",        label: "Audio",                                icon: "🎵" },
+    { type: "audio",        label: "Audio (upload ou URL)",               icon: "🎵" },
+    { type: "video",        label: "Vidéo (upload local)",                icon: "🎬" },
     { type: "video_embed",  label: "Vidéo YouTube / Vimeo",               icon: "▶️" },
     { type: "file",         label: "Fichier à télécharger",               icon: "📎" },
     { type: "scenario",     label: "Scénario réel",                       icon: "📋" },
@@ -446,6 +533,7 @@ function SpecialBlockAdder({ onAdd, onAddText }: {
     switch (type) {
       case "callout":      return { id, type, variant: "info", title: "", content: [{ type: "text", text: "Votre message ici." }] };
       case "audio":        return { id, type, url: "", title: "Audio", duration_seconds: 0 };
+      case "video":        return { id, type: "video" as const, url: "", title: "Vidéo" };
       case "video_embed":  return { id, type, provider: "youtube", video_id: "", caption: "" };
       case "file":         return { id, type, url: "", filename: "document.pdf" };
       case "scenario":     return { id, type, title: "Scénario", context: "", events: ["Événement 1"], lessons: ["Leçon 1"] };
@@ -494,11 +582,12 @@ function SpecialBlockAdder({ onAdd, onAddText }: {
 
 // ── Éditeur des blocs spéciaux ────────────────────────────────────────────────
 
-function SpecialBlockEditor({ block, onChange, onDelete, onDuplicate }: {
+function SpecialBlockEditor({ block, onChange, onDelete, onDuplicate, moduleId }: {
   readonly block: Block;
   readonly onChange: (b: Block) => void;
   readonly onDelete: () => void;
   readonly onDuplicate?: () => void;
+  readonly moduleId: string;
 }) {
   const input = (label: string, value: string, onCh: (v: string) => void, placeholder = "") => (
     <div>
@@ -532,13 +621,22 @@ function SpecialBlockEditor({ block, onChange, onDelete, onDuplicate }: {
       );
       case "audio": return (
         <div className="space-y-3">
-          {input("URL du fichier audio", block.url, (v) => onChange({ ...block, url: v }), "https://...")}
+          <UploadButton
+            moduleId={moduleId}
+            accept="audio/mpeg,audio/mp3,audio/wav,audio/ogg,audio/aac,audio/m4a,audio/mp4"
+            label="Uploader un fichier audio"
+            onUploaded={(url, filename) => onChange({ ...block, url, title: block.title || filename })}
+          />
+          {input("ou URL externe", block.url, (v) => onChange({ ...block, url: v }), "https://...")}
           {input("Titre", block.title, (v) => onChange({ ...block, title: v }))}
           <div>
             <label className="block text-xs font-medium text-ink-soft mb-1">Durée (secondes)</label>
             <input type="number" value={block.duration_seconds ?? 0} onChange={(e) => onChange({ ...block, duration_seconds: Number(e.target.value) })}
               className="w-full rounded-lg border border-surface-warm px-3 py-2 text-sm focus:border-primary focus:outline-none" />
           </div>
+          {block.url && (
+            <audio controls src={block.url} className="w-full rounded-lg mt-1" />
+          )}
         </div>
       );
       case "video_embed": return (
@@ -555,9 +653,34 @@ function SpecialBlockEditor({ block, onChange, onDelete, onDuplicate }: {
           {input("Légende (optionnel)", block.caption ?? "", (v) => onChange({ ...block, caption: v }))}
         </div>
       );
+      case "video": {
+        const vb = block as VideoBlock;
+        return (
+          <div className="space-y-3">
+            <UploadButton
+              moduleId={moduleId}
+              accept="video/mp4,video/webm,video/ogg,video/quicktime"
+              label="Uploader une vidéo"
+              onUploaded={(url, filename, mime) => onChange({ ...vb, url, title: vb.title || filename, mime })}
+            />
+            {input("ou URL externe", vb.url, (v) => onChange({ ...vb, url: v }), "https://...")}
+            {input("Titre", vb.title, (v) => onChange({ ...vb, title: v }))}
+            {input("Légende (optionnel)", vb.caption ?? "", (v) => onChange({ ...vb, caption: v }))}
+            {vb.url && (
+              <video controls src={vb.url} className="w-full rounded-lg mt-1 max-h-64 bg-black" />
+            )}
+          </div>
+        );
+      }
       case "file": return (
         <div className="space-y-3">
-          {input("URL du fichier", block.url, (v) => onChange({ ...block, url: v }), "https://...")}
+          <UploadButton
+            moduleId={moduleId}
+            accept=".pdf,.doc,.docx,.xls,.xlsx,.zip"
+            label="Uploader un fichier"
+            onUploaded={(url, filename, _mime, size) => onChange({ ...block, url, filename, size_bytes: size })}
+          />
+          {input("ou URL externe", block.url, (v) => onChange({ ...block, url: v }), "https://...")}
           {input("Nom affiché", block.filename, (v) => onChange({ ...block, filename: v }))}
         </div>
       );
@@ -604,8 +727,9 @@ function SpecialBlockEditor({ block, onChange, onDelete, onDuplicate }: {
   }
 
   const typeLabels: Record<string, string> = {
-    callout: "💡 Encadré", audio: "🎵 Audio", video_embed: "▶️ Vidéo",
-    file: "📎 Fichier", scenario: "📋 Scénario", key_takeaway: "⭐ Points clés", mini_quiz: "❓ Mini-quiz",
+    callout: "💡 Encadré", audio: "🎵 Audio", video: "🎬 Vidéo",
+    video_embed: "▶️ Vidéo embed", file: "📎 Fichier",
+    scenario: "📋 Scénario", key_takeaway: "⭐ Points clés", mini_quiz: "❓ Mini-quiz",
   };
 
   return (
@@ -622,7 +746,7 @@ function SpecialBlockEditor({ block, onChange, onDelete, onDuplicate }: {
 // Un "segment" est soit un éditeur TipTap (blocs texte consécutifs) soit un bloc spécial isolé.
 // Cela permet d'intercaler du texte avant et après chaque bloc spécial.
 
-const SPECIAL_TYPES = new Set(["callout","audio","video_embed","file","scenario","key_takeaway","mini_quiz"]);
+const SPECIAL_TYPES = new Set(["callout","audio","video","video_embed","file","scenario","key_takeaway","mini_quiz"]);
 
 type Segment =
   | { kind: "text";    segId: string; blocks: Block[] }
@@ -734,11 +858,12 @@ function SegmentWrapper({ children, onDelete, onDuplicate, dragProps }: {
 
 // ── Éditeur d'un segment texte ────────────────────────────────────────────────
 
-function TextSegmentEditor({ segId, lessonId, blocks, onSave }: {
+function TextSegmentEditor({ segId, lessonId, blocks, onSave, moduleId }: {
   readonly segId: string;
   readonly lessonId: string;
   readonly blocks: Block[];
   readonly onSave: (lessonId: string, segId: string, blocks: Block[]) => void;
+  readonly moduleId: string;
 }) {
   // IDs gelés au montage : onBlur écrit toujours dans la bonne leçon/segment,
   // même si activeLessonId a changé entre le montage et le blur.
@@ -760,7 +885,7 @@ function TextSegmentEditor({ segId, lessonId, blocks, onSave }: {
         underline: false,
         codeBlock: { HTMLAttributes: { class: "language-text" } },
       }),
-      Image.configure({ allowBase64: false }),
+      ResizableImage,
       Link.configure({ openOnClick: false, HTMLAttributes: { rel: "noopener noreferrer" } }),
       Placeholder.configure({ placeholder: "Écrivez ici…" }),
       Underline,
@@ -776,20 +901,33 @@ function TextSegmentEditor({ segId, lessonId, blocks, onSave }: {
       // Ignore les normalisations automatiques au montage (transaction sans userInput)
       if (!transaction.docChanged || !transaction.steps.length) return;
       try {
-        const converted = tiptapToBlocks(ed.getJSON());
+        const converted = tiptapToBlocks(ed.getJSON(), currentBlocksRef.current);
         if (converted.length > 0) {
           currentBlocksRef.current = converted;
           dirtyRef.current = true;
+          // Flush immédiat pour les insertions de nœuds (image, hr…) — pas pour
+          // la frappe texte normale ("input") qui reste bufferisée jusqu'au blur.
+          const uiEvent = transaction.getMeta("uiEvent");
+          const isTyping = uiEvent === "input" || uiEvent === "compositionend";
+          if (!isTyping) {
+            onSaveRef.current(savedLessonId.current, savedSegId.current, converted);
+            dirtyRef.current = false;
+          }
         }
       } catch {
         // Contenu non convertible (ex: paste Word avec images) — on garde l'ancien
       }
     },
-    editorProps: { attributes: { class: "prose prose-holenek max-w-none min-h-[120px] px-8 py-6 focus:outline-none" } },
+    onBlur() {
+      if (dirtyRef.current) {
+        onSaveRef.current(savedLessonId.current, savedSegId.current, currentBlocksRef.current);
+        dirtyRef.current = false;
+      }
+    },
+    editorProps: { attributes: { class: "prose prose-holenek max-w-none min-h-[120px] px-8 py-6 focus:outline-none [&]:[display:flow-root]" } },
   }, []);
 
-  // Flush vers le state parent au démontage uniquement si l'utilisateur a tapé.
-  // Évite d'écraser une leçon non modifiée avec un contenu "normalisé" par TipTap.
+  // Flush au démontage si des changements n'ont pas encore été flushés via onBlur.
   useEffect(() => {
     return () => {
       if (dirtyRef.current) {
@@ -807,9 +945,241 @@ function TextSegmentEditor({ segId, lessonId, blocks, onSave }: {
 
   return (
     <div className="rounded-xl border border-surface-warm bg-white">
-      <Toolbar editor={editor} />
+      <Toolbar editor={editor} moduleId={moduleId} />
       <EditorContent editor={editor} />
     </div>
+  );
+}
+
+// ── Champ résumé audio module (SPEC-CONTENT §5.3) ────────────────────────────
+
+function AudioSummaryField({ moduleId, value, onChange }: {
+  readonly moduleId: string;
+  readonly value: string;
+  readonly onChange: (url: string) => void;
+}) {
+  const { upload, state, error } = useMediaUpload(moduleId);
+  return (
+    <div className="flex items-center gap-2">
+      <label className="text-xs text-ink-soft whitespace-nowrap">Résumé audio</label>
+      <UploadButton
+        moduleId={moduleId}
+        accept="audio/mpeg,audio/mp3,audio/wav,audio/ogg,audio/aac,audio/m4a"
+        label="Uploader"
+        onUploaded={(url) => onChange(url)}
+      />
+      <input
+        type="text"
+        value={value}
+        placeholder="ou URL externe…"
+        onChange={(e) => onChange(e.target.value)}
+        className="w-48 rounded-lg border border-surface-warm px-2 py-1 text-xs text-ink focus:border-primary focus:outline-none"
+      />
+      {value && (
+        <button type="button" onClick={() => onChange("")} title="Supprimer le résumé audio"
+          className="text-xs text-red-400 hover:text-red-600">✕</button>
+      )}
+    </div>
+  );
+}
+
+// ── Drawer latéral "Réglages du module" ──────────────────────────────────────
+// Panneau slide-in depuis la droite avec overlay. Extensible Phase 2c
+// (passing_score, max_attempts, randomize, show_explanations…).
+
+const UNLOCK_MODE_OPTIONS = [
+  {
+    value: "free" as const,
+    title: "Libre",
+    description: "L'apprenant peut naviguer entre les leçons dans n'importe quel ordre.",
+  },
+  {
+    value: "sequential" as const,
+    title: "Séquentielle",
+    description: "Chaque leçon se débloque dès que la précédente est ouverte. Un cadenas s'affiche sur les leçons verrouillées.",
+  },
+];
+
+function ModuleSettingsDrawer({
+  moduleId, content, onChange,
+}: {
+  readonly moduleId: string;
+  readonly content: ModuleContent;
+  readonly onChange: (next: ModuleContent) => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    function onEsc(e: KeyboardEvent) { if (e.key === "Escape") setOpen(false); }
+    document.addEventListener("keydown", onEsc);
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onEsc);
+      document.body.style.overflow = "";
+    };
+  }, [open]);
+
+  const unlockMode = content.lesson_unlock_mode ?? "free";
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        title="Réglages du module"
+        aria-haspopup="dialog"
+        className={`flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-medium transition-colors ${
+          open ? "border-primary text-primary bg-primary/5" : "border-surface-warm text-ink hover:bg-surface"
+        }`}
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+        Réglages
+      </button>
+
+      {open && (
+        <>
+          {/* Overlay sombre */}
+          <button
+            type="button"
+            aria-label="Fermer les réglages"
+            onClick={() => setOpen(false)}
+            className="fixed inset-0 z-40 bg-ink/30 backdrop-blur-[2px] transition-opacity"
+          />
+
+          {/* Panneau latéral */}
+          <aside
+            role="dialog"
+            aria-modal="true"
+            aria-label="Réglages du module"
+            className="fixed right-0 top-0 z-50 flex h-screen w-full max-w-md flex-col bg-white shadow-2xl"
+          >
+            {/* Header */}
+            <header className="flex items-center justify-between border-b border-surface-warm px-6 py-4">
+              <div>
+                <h2 className="text-base font-bold text-primary-deep">Réglages du module</h2>
+                <p className="text-xs text-ink-soft mt-0.5">Pédagogie, médias, paramètres avancés</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                aria-label="Fermer"
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-ink-soft hover:bg-surface hover:text-ink transition-colors"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
+            </header>
+
+            {/* Contenu scrollable */}
+            <div className="flex-1 overflow-y-auto px-6 py-6 space-y-8">
+
+              {/* ── Section Pédagogie ── */}
+              <section className="space-y-5">
+                <div>
+                  <h3 className="text-[11px] font-bold uppercase tracking-widest text-ink-soft">Pédagogie</h3>
+                  <div className="mt-1 h-px w-full bg-surface-warm" />
+                </div>
+
+                {/* Durée estimée */}
+                <div>
+                  <label htmlFor="settings-duration" className="block text-sm font-semibold text-ink mb-1">
+                    Durée estimée
+                  </label>
+                  <p className="text-xs text-ink-soft mb-2.5">Temps moyen indiqué à l'apprenant avant de commencer.</p>
+                  <div className="flex items-center gap-2.5">
+                    <input
+                      id="settings-duration"
+                      type="number" min={1} max={480}
+                      value={content.estimated_duration_minutes}
+                      onChange={(e) => onChange({ ...content, estimated_duration_minutes: Number(e.target.value) })}
+                      className="w-24 rounded-lg border border-surface-warm px-3 py-2 text-sm text-ink focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                    />
+                    <span className="text-sm text-ink-soft">minutes</span>
+                  </div>
+                </div>
+
+                {/* Mode de progression — cards radio */}
+                <div>
+                  <p className="block text-sm font-semibold text-ink mb-1">Progression des leçons</p>
+                  <p className="text-xs text-ink-soft mb-3">Définit comment l'apprenant peut naviguer entre les leçons.</p>
+                  <div className="space-y-2" role="radiogroup" aria-label="Mode de progression">
+                    {UNLOCK_MODE_OPTIONS.map((opt) => {
+                      const selected = unlockMode === opt.value;
+                      return (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          role="radio"
+                          aria-checked={selected}
+                          onClick={() => onChange({ ...content, lesson_unlock_mode: opt.value })}
+                          className={`w-full rounded-xl border p-4 text-left transition-all ${
+                            selected
+                              ? "border-primary bg-primary/5 ring-2 ring-primary/20"
+                              : "border-surface-warm bg-white hover:border-primary/40"
+                          }`}
+                        >
+                          <div className="flex items-start gap-3">
+                            <span className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 ${
+                              selected ? "border-primary" : "border-surface-warm"
+                            }`}>
+                              {selected && <span className="h-2 w-2 rounded-full bg-primary" />}
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <p className={`text-sm font-semibold ${selected ? "text-primary-deep" : "text-ink"}`}>{opt.title}</p>
+                              <p className="mt-0.5 text-xs text-ink-soft leading-relaxed">{opt.description}</p>
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </section>
+
+              {/* ── Section Média ── */}
+              <section className="space-y-4">
+                <div>
+                  <h3 className="text-[11px] font-bold uppercase tracking-widest text-ink-soft">Média</h3>
+                  <div className="mt-1 h-px w-full bg-surface-warm" />
+                </div>
+
+                <div>
+                  <p className="block text-sm font-semibold text-ink mb-1">Résumé audio du module</p>
+                  <p className="text-xs text-ink-soft mb-3">Fichier audio optionnel attaché au module.</p>
+                  <AudioSummaryField
+                    moduleId={moduleId}
+                    value={content.audio_summary_url ?? ""}
+                    onChange={(url) => onChange({ ...content, audio_summary_url: url || undefined })}
+                  />
+                </div>
+              </section>
+
+            </div>
+
+            {/* Footer */}
+            <footer className="border-t border-surface-warm px-6 py-3 bg-surface">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs text-ink-soft">
+                  Modifications appliquées automatiquement. N'oubliez pas de <strong className="text-ink">sauvegarder</strong> le module.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setOpen(false)}
+                  className="shrink-0 rounded-lg bg-primary px-4 py-2 text-xs font-semibold text-white hover:bg-primary-deep transition-colors"
+                >
+                  Fermer
+                </button>
+              </div>
+            </footer>
+          </aside>
+        </>
+      )}
+    </>
   );
 }
 
@@ -962,6 +1332,9 @@ export function AdminModuleEditor({ module }: { readonly module: Module }) {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState(false);
+  const [status, setStatus] = useState<"draft" | "published">(module.status as "draft" | "published" ?? "draft");
+  const [publishing, setPublishing] = useState(false);
+  const [publishError, setPublishError] = useState("");
   const [lessonPanelCollapsed, setLessonPanelCollapsed] = useState(false);
 
   // drag refs — segment level (text or special)
@@ -1117,6 +1490,30 @@ export function AdminModuleEditor({ module }: { readonly module: Module }) {
     }
   }
 
+  async function handlePublish() {
+    setPublishing(true);
+    setPublishError("");
+    try {
+      // Sauvegarde d'abord, puis publie
+      const saveRes = await fetch(`/api/learning/modules/${module.id}/content`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content_fr: content }),
+      });
+      if (!saveRes.ok) throw new Error("Échec de la sauvegarde");
+
+      const publishRes = await fetch(`/api/learning/modules/${module.id}/publish`, { method: "POST" });
+      if (!publishRes.ok) throw new Error("Échec de la publication");
+
+      setStatus("published");
+      setSaved(true);
+    } catch (e: any) {
+      setPublishError(e?.message ?? "Erreur lors de la publication");
+    } finally {
+      setPublishing(false);
+    }
+  }
+
   const segs = activeLesson ? toSegments(activeLesson.blocks) : [];
 
   return (
@@ -1215,17 +1612,23 @@ export function AdminModuleEditor({ module }: { readonly module: Module }) {
             )}
           </div>
           <div className="flex items-center gap-3 shrink-0">
+            {/* Badge statut */}
+            <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ${status === "published" ? "bg-green-50 text-green-700 ring-1 ring-green-200" : "bg-amber-50 text-amber-700 ring-1 ring-amber-200"}`}>
+              {status === "published" ? "Publié" : "Brouillon"}
+            </span>
+
             {saved && <span className="flex items-center gap-1 text-xs text-green-600 font-medium">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>Sauvegardé
             </span>}
             {saveError && <span className="text-xs text-red-600 font-medium">Erreur — réessayez</span>}
-            <div className="flex items-center gap-2">
-              <label className="text-xs text-ink-soft">Durée estimée</label>
-              <input type="number" min={1} max={480} value={content.estimated_duration_minutes}
-                onChange={(e) => { setContent((prev) => ({ ...prev, estimated_duration_minutes: Number(e.target.value) })); setSaved(false); }}
-                className="w-16 rounded-lg border border-surface-warm px-2 py-1 text-xs text-ink focus:border-primary focus:outline-none" />
-              <span className="text-xs text-ink-soft">min</span>
-            </div>
+            {publishError && <span className="text-xs text-red-600 font-medium">{publishError}</span>}
+
+            {/* Réglages module — durée, mode progression, résumé audio (SPEC-CONTENT §5.3) */}
+            <ModuleSettingsDrawer
+              moduleId={module.id}
+              content={content}
+              onChange={(next) => { setContent(next); setSaved(false); }}
+            />
             <a href={`/preview/module/${module.id}`} target="_blank" rel="noopener noreferrer"
               className="flex items-center gap-2 rounded-xl border border-surface-warm px-5 py-2 text-sm font-medium text-ink hover:bg-surface transition-colors">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -1233,13 +1636,22 @@ export function AdminModuleEditor({ module }: { readonly module: Module }) {
               </svg>
               Prévisualiser
             </a>
-            <button type="button" onClick={handleSave} disabled={saving}
-              className="flex items-center gap-2 rounded-xl bg-primary px-5 py-2 text-sm font-bold text-white hover:bg-primary-deep transition-colors disabled:opacity-60 shadow-sm">
+            <button type="button" onClick={handleSave} disabled={saving || publishing}
+              className="flex items-center gap-2 rounded-xl border border-surface-warm px-4 py-2 text-sm font-medium text-ink hover:bg-surface transition-colors disabled:opacity-60">
               {saving
                 ? <><svg className="animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>Sauvegarde…</>
                 : <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>Sauvegarder</>
               }
             </button>
+            {status === "draft" && (
+              <button type="button" onClick={handlePublish} disabled={publishing || saving}
+                className="flex items-center gap-2 rounded-xl bg-green-600 px-5 py-2 text-sm font-bold text-white hover:bg-green-700 transition-colors disabled:opacity-60 shadow-sm">
+                {publishing
+                  ? <><svg className="animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>Publication…</>
+                  : <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M22 2L11 13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>Publier</>
+                }
+              </button>
+            )}
           </div>
         </div>
 
@@ -1273,6 +1685,7 @@ export function AdminModuleEditor({ module }: { readonly module: Module }) {
                       lessonId={activeLessonId}
                       blocks={seg.blocks}
                       onSave={updateTextSeg}
+                      moduleId={module.id}
                     />
                   </SegmentWrapper>
                 );
@@ -1290,12 +1703,13 @@ export function AdminModuleEditor({ module }: { readonly module: Module }) {
                     onChange={updateSpecialInSeg}
                     onDelete={() => deleteSegment(idx)}
                     onDuplicate={() => duplicateSegment(idx)}
+                    moduleId={module.id}
                   />
                 </SegmentWrapper>
               );
             })}
 
-            <SpecialBlockAdder onAdd={addSpecialBlock} onAddText={addTextSegment} />
+            <SpecialBlockAdder onAdd={addSpecialBlock} onAddText={addTextSegment} moduleId={module.id} />
           </div>
         ) : (
           <div className="flex-1 flex items-center justify-center">

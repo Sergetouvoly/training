@@ -13,6 +13,8 @@ export default function LoginPage() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [mfaCode, setMfaCode] = useState("");
+  const [needsMfa, setNeedsMfa] = useState(false);
   const [error, setError] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -20,10 +22,25 @@ export default function LoginPage() {
     e.preventDefault();
     setError(false);
     setLoading(true);
-    const result = await signIn("credentials", { email, password, redirect: false });
+
+    // Premier essai sans code MFA pour détecter si MFA est requis
+    const result = await signIn("credentials", {
+      email,
+      password,
+      ...(needsMfa ? { mfa_code: mfaCode } : {}),
+      redirect: false,
+    });
     setLoading(false);
-    if (result?.ok) router.push(callbackUrl);
-    else setError(true);
+
+    if (result?.ok) {
+      router.push(callbackUrl);
+    } else if (!needsMfa && result?.error === "CredentialsSignin") {
+      // Peut être un échec MFA — on affiche le champ code et on laisse réessayer
+      setNeedsMfa(true);
+      setError(false);
+    } else {
+      setError(true);
+    }
   }
 
   return (
@@ -116,6 +133,31 @@ export default function LoginPage() {
               />
             </div>
 
+            {/* Champ code TOTP — apparaît uniquement si le serveur l'exige */}
+            {needsMfa && (
+              <div>
+                <label htmlFor="mfa-code" className="mb-1.5 block text-sm font-medium text-ink">
+                  Code d'authentification
+                </label>
+                <p className="mb-2 text-xs text-ink-soft">
+                  Entrez le code à 6 chiffres de votre application TOTP (Google Authenticator, Authy…)
+                </p>
+                <input
+                  id="mfa-code"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  required
+                  autoFocus
+                  value={mfaCode}
+                  onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, ""))}
+                  placeholder="123456"
+                  className="w-full rounded-lg border border-primary px-3.5 py-2.5 text-center text-sm font-mono tracking-[0.4em] text-ink shadow-sm transition focus:outline-none focus:ring-2 focus:ring-primary/20"
+                />
+              </div>
+            )}
+
             <button
               type="submit"
               disabled={loading}
@@ -128,7 +170,7 @@ export default function LoginPage() {
                   </svg>
                   {fr.common.loading}
                 </>
-              ) : t.submit}
+              ) : needsMfa ? "Vérifier le code" : t.submit}
             </button>
           </form>
         </div>

@@ -20,12 +20,17 @@
     "@nestjs/core": "^11.1.0",
     "@nestjs/jwt": "^11.0.2",
     "@nestjs/platform-express": "^11.1.0",
+    "@nestjs/serve-static": "^5.0.5",
     "@nestjs/swagger": "^11.4.2",
     "@types/bcryptjs": "^3.0.0",
+    "@types/multer": "^2.1.0",
     "bcryptjs": "^3.0.3",
+    "multer": "^2.1.1",
     "pdfkit": "^0.16.0",
+    "qrcode": "^1.5.4",
     "reflect-metadata": "^0.2.2",
-    "rxjs": "^7.8.1"
+    "rxjs": "^7.8.1",
+    "speakeasy": "^2.0.0"
   },
   "devDependencies": {
     "@elearning/tsconfig": "workspace:*",
@@ -33,6 +38,8 @@
     "@types/express": "^5.0.0",
     "@types/node": "^22.0.0",
     "@types/pdfkit": "^0.13.0",
+    "@types/qrcode": "^1.5.6",
+    "@types/speakeasy": "^2.0.10",
     "nodemon": "^3.1.14",
     "tsx": "^4.19.0",
     "typescript": "^5.8.0",

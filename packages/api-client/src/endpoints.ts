@@ -12,6 +12,9 @@ import type {
 
 export function makeLearningApi(client: ApiClient) {
   return {
+    publishModule: (id: string, signal?: AbortSignal) =>
+      client.post<Module>(`/learning/modules/${id}/publish`, {}, signal),
+
     listPaths: (signal?: AbortSignal) =>
       client.get<LearningPath[]>("/learning/paths", signal),
 
@@ -97,6 +100,9 @@ export function makePassportApi(client: ApiClient) {
 
 export function makeUserApi(client: ApiClient) {
   return {
+    getMe: (signal?: AbortSignal) =>
+      client.get<{ id: string; mfa_enabled: boolean; email: string; display_name: string; platform_role: string }>("/users/me", signal),
+
     exportGdpr: (signal?: AbortSignal) =>
       client.get<GdprExport>("/users/me/export", signal),
 

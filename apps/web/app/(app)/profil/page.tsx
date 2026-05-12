@@ -1,7 +1,8 @@
-// Refs: SPEC.md §8, US-1.4 export RGPD JSON, R-1.1 états Stamp
+// Refs: SPEC.md §8, US-1.1 MFA, US-1.4 export RGPD JSON, R-1.1 états Stamp
 import { fr } from "@elearning/i18n";
 import { getApiClient } from "../../../lib/api";
 import { auth } from "../../../auth";
+import { MfaPanel } from "./MfaPanel";
 
 const stampConfig: Record<string, { badge: string; dot: string; label: string }> = {
   green:  { badge: "bg-green-50 text-green-700 ring-1 ring-green-200",  dot: "bg-green-400",  label: fr.profile.valid },
@@ -26,9 +27,13 @@ export default async function ProfilPage() {
   const email = session?.user?.email ?? "";
   const initial = displayName.charAt(0).toUpperCase() || "U";
 
-  const passport = await api.passport.get().catch(() => null);
+  const [passport, me] = await Promise.all([
+    api.passport.get().catch(() => null),
+    api.user.getMe().catch(() => null),
+  ]);
   const stamps = passport?.stamps ?? [];
   const streak = passport?.streak;
+  const mfaEnabled = me?.mfa_enabled ?? false;
 
   const greenCount = stamps.filter((s) => s.state === "green").length;
 
@@ -92,6 +97,9 @@ export default async function ProfilPage() {
               )}
             </div>
           )}
+
+          {/* MFA */}
+          <MfaPanel mfaEnabled={mfaEnabled} />
 
           {/* Export RGPD */}
           <a

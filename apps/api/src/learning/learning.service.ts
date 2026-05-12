@@ -1,6 +1,7 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
-import { randomUUID } from "node:crypto";
+import { Injectable, NotFoundException, ForbiddenException } from "@nestjs/common";
+import { randomUUID, createHash } from "node:crypto";
 import { PrismaService } from "../prisma/prisma.service.js";
+import type { ModulePublishedPayload } from "@elearning/domain";
 
 // Refs: SPEC.md §3 L1, §11 US-1.2, US-1.5
 
@@ -120,5 +121,43 @@ export class LearningService {
   async deleteModule(id: string) {
     await this.findModuleById(id);
     return this.prisma.module.delete({ where: { id } });
+  }
+
+  // Refs: SPEC-CONTENT.md §7.5, SPEC §8 — draft → published
+  async publishModule(id: string, publishedBy: string) {
+    const mod = await this.findModuleById(id);
+
+    if (mod.status === "published") {
+      throw new ForbiddenException(`Module ${id} is already published`);
+    }
+
+    const version_hash = createHash("sha256")
+      .update(JSON.stringify(mod.content_fr))
+      .digest("hex");
+
+    const payload: ModulePublishedPayload = {
+      module_id: id,
+      version: mod.version as string,
+      version_hash,
+      published_by: publishedBy,
+    };
+
+    const [updated] = await Promise.all([
+      this.prisma.module.update({
+        where: { id },
+        data: { status: "published", version_hash },
+      }),
+      this.prisma.domainEvent.create({
+        data: {
+          id: randomUUID(),
+          event_name: "ModulePublished",
+          event_version: "1",
+          produced_by: "learning-service",
+          payload: payload as object,
+        },
+      }),
+    ]);
+
+    return updated;
   }
 }

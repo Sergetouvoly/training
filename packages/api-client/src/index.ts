@@ -20,7 +20,7 @@ export type {
   // Blocs de contenu
   Block, InlineContent, InlineMark,
   ParagraphBlock, HeadingBlock, BulletListBlock, OrderedListBlock, BlockquoteBlock,
-  ImageBlock, AudioBlock, VideoEmbedBlock, FileBlock,
+  ImageBlock, AudioBlock, VideoBlock, VideoEmbedBlock, FileBlock,
   CalloutBlock, CodeBlock, TableBlock, DividerBlock,
   ScenarioBlock, KeyTakeawayBlock, MiniQuizBlock,
 } from "./types.js";

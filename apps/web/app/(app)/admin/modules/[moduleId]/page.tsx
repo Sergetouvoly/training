@@ -2,7 +2,7 @@
 import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 import { getApiClient, getPlatformRole } from "../../../../../lib/api";
-import { AdminModuleEditor } from "./AdminModuleEditor";
+import { AdminModuleEditorClient } from "./AdminModuleEditorClient";
 
 const CONTENT_ROLES = new Set(["super_admin", "admin", "trainer"]);
 
@@ -40,7 +40,7 @@ export default async function AdminModulePage({
         </div>
       </div>
 
-      <AdminModuleEditor module={mod} />
+      <AdminModuleEditorClient module={mod} />
     </section>
   );
 }

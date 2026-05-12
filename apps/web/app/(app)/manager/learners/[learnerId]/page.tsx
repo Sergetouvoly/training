@@ -1,10 +1,8 @@
-// Refs: SPEC.md §7 — manager : détail d'un membre de l'équipe
-import { redirect, notFound } from "next/navigation";
+// Refs: SPEC.md §7 — manager : détail d'un membre de l'équipe.
+// La garde de rôle est assurée par le manager/layout.tsx.
+import { notFound } from "next/navigation";
 import Link from "next/link";
-import { auth } from "../../../../../auth";
 import { getApiClient } from "../../../../../lib/api";
-
-const MANAGER_ROLES = new Set(["super_admin", "admin", "manager"]);
 
 const STATE_CONFIG = {
   green:  { label: "Validé",   cls: "bg-green-50 text-green-700 border-green-200" },
@@ -17,10 +15,7 @@ export default async function ManagerLearnerDetailPage({
 }: {
   readonly params: Promise<{ learnerId: string }>;
 }) {
-  const [{ learnerId }, session] = await Promise.all([params, auth()]);
-  const platformRole = (session as any)?.platformRole as string ?? "learner";
-  if (!MANAGER_ROLES.has(platformRole)) redirect("/dashboard");
-
+  const { learnerId } = await params;
   const api = await getApiClient();
   const [learner, modules] = await Promise.all([
     api.user.getLearnerDetail(learnerId).catch(() => null),

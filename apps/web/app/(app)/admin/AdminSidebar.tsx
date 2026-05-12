@@ -1,33 +1,32 @@
 "use client";
 import Link from "next/link";
 import { useState, useEffect } from "react";
+import { can, type Action } from "../../../lib/permissions";
 
 const STORAGE_KEY = "holenek_admin_sidebar_collapsed";
 
-const NAV_SECTIONS = [
-  {
-    label: "Tableau de bord",
-    adminOnly: true,
-    items: [
-      {
-        href: "/admin",
-        label: "Vue d'ensemble",
-        icon: (
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/>
-            <rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/>
-          </svg>
-        ),
-      },
-    ],
-  },
+// Chaque item porte l'action requise pour le voir. Filtrage via can(role, action).
+// Section masquée si aucun item visible.
+type NavItem = { href: string; label: string; action: Action; icon: React.ReactNode };
+type NavSection = { label: string; items: NavItem[] };
+
+// Tableau de bord : le href est résolu à partir du rôle (cf. homeForRole),
+// d'où la href de section déplacée dans le composant.
+const DASHBOARD_ICON = (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/>
+    <rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/>
+  </svg>
+);
+
+const NAV_SECTIONS: NavSection[] = [
   {
     label: "Utilisateurs",
-    adminOnly: true,
     items: [
       {
         href: "/admin/users",
         label: "Comptes",
+        action: "user.read",
         icon: (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/>
@@ -38,6 +37,7 @@ const NAV_SECTIONS = [
       {
         href: "/admin/learners",
         label: "Apprenants",
+        action: "learner.read",
         icon: (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/>
@@ -52,6 +52,7 @@ const NAV_SECTIONS = [
       {
         href: "/admin/modules",
         label: "Modules",
+        action: "module.update", // visible si on peut éditer (trainer+)
         icon: (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20M4 19.5V5A2.5 2.5 0 0 1 6.5 2.5H20v17H6.5A2.5 2.5 0 0 1 4 19.5z"/>
@@ -61,6 +62,7 @@ const NAV_SECTIONS = [
       {
         href: "/admin/paths",
         label: "Parcours",
+        action: "path.update",
         icon: (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M3 3h18M3 12h18M3 21h18"/><path d="M7 7l5 5-5 5"/>
@@ -70,6 +72,7 @@ const NAV_SECTIONS = [
       {
         href: "/admin/competences",
         label: "Compétences",
+        action: "competence.write",
         icon: (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
@@ -79,6 +82,7 @@ const NAV_SECTIONS = [
       {
         href: "/admin/assessment",
         label: "Questions",
+        action: "assessment.write",
         icon: (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>
@@ -89,12 +93,11 @@ const NAV_SECTIONS = [
   },
   {
     label: "Système",
-    superAdminOnly: true,
     items: [
       {
         href: "/admin/config",
         label: "Configuration",
-        superAdminOnly: true,
+        action: "config.write", // super_admin uniquement
         icon: (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="12" cy="12" r="3"/>
@@ -107,8 +110,7 @@ const NAV_SECTIONS = [
 ];
 
 interface SidebarProps {
-  readonly isSuperAdmin: boolean;
-  readonly isTrainer: boolean;
+  readonly platformRole: string;
   readonly displayName: string;
   readonly email: string;
   readonly badge: { label: string; cls: string };
@@ -116,9 +118,20 @@ interface SidebarProps {
 }
 
 export function AdminSidebar({
-  isSuperAdmin, isTrainer, displayName, email, badge, homeHref,
+  platformRole, displayName, email, badge, homeHref,
 }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
+
+  // Sections : on prépend un "Tableau de bord" pointant sur homeHref (calculé
+  // par le layout selon le rôle : /admin, /trainer ou /manager). L'action est
+  // "learner.read" car tous les rôles autorisés dans l'admin chrome la possèdent.
+  const sections: NavSection[] = [
+    {
+      label: "Tableau de bord",
+      items: [{ href: homeHref, label: "Vue d'ensemble", action: "learner.read", icon: DASHBOARD_ICON }],
+    },
+    ...NAV_SECTIONS,
+  ];
 
   useEffect(() => {
     try {
@@ -165,7 +178,7 @@ export function AdminSidebar({
           </div>
           <span className="text-sm font-bold text-primary-deep whitespace-nowrap">Holenek</span>
           <span className="ml-auto shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide bg-[#f0f1f3] text-ink-soft">
-            {isTrainer ? "Contenu" : "Admin"}
+            {platformRole === "trainer" ? "Contenu" : platformRole === "manager" ? "Équipe" : "Admin"}
           </span>
           <button
             type="button"
@@ -181,14 +194,11 @@ export function AdminSidebar({
         </div>
       )}
 
-      {/* Navigation */}
+      {/* Navigation — filtrée via can() à partir du rôle. Une section est
+          visible si elle contient au moins un item autorisé. */}
       <nav className="flex-1 overflow-y-auto py-4 space-y-5" style={{ padding: collapsed ? "16px 4px" : "16px 8px" }} aria-label="Navigation administration">
-        {NAV_SECTIONS.map((section) => {
-          if (section.superAdminOnly && !isSuperAdmin) return null;
-          if (section.adminOnly && isTrainer) return null;
-          const visibleItems = section.items.filter(
-            (item) => !("superAdminOnly" in item && item.superAdminOnly) || isSuperAdmin,
-          );
+        {sections.map((section) => {
+          const visibleItems = section.items.filter((item) => can(platformRole, item.action));
           if (visibleItems.length === 0) return null;
           return (
             <div key={section.label}>

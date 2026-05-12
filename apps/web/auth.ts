@@ -24,6 +24,7 @@ const result: NextAuthResult = NextAuth({
       credentials: {
         email: { label: "Email", type: "email" },
         password: { label: "Mot de passe", type: "password" },
+        mfa_code: { label: "Code MFA", type: "text" },
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) return null;

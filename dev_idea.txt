@@ -1,0 +1,16 @@
+1 Recommandation : ≥ 90 % du contenu visible, plus robuste.
+2- Recommandation : si scrollHeight <= clientHeight + 50px, le bouton est actif tout de suite.
+3-Recommandation : B. L'utilisateur garde le contrôle, et il peut relire avant de passer
+4-Recommandation : A. Le mode libre n'a pas besoin de friction.
+
+Fais tout ce qui est recommandeé en tant que expert 
+
+
+
+
+1 Recommandation : ≥ 90 % du contenu visible, plus robuste.
+2- Recommandation : si scrollHeight <= clientHeight + 50px, le bouton est actif tout de suite.
+3-Recommandation : B. L'utilisateur garde le contrôle, et il peut relire avant de passer
+4-Recommandation : A. Le mode libre n'a pas besoin de friction.
+
+Fais tout ce qui est recommandeé en tant que expert 
