@@ -1,14 +1,13 @@
 // Refs: SPEC.md §7 — gestion du référentiel de compétences
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { getApiClient, getPlatformRole } from "../../../../lib/api";
+import { getApiClient, getPermissions } from "../../../../lib/api";
+import { can } from "../../../../lib/permissions";
 import type { CompetenceDto } from "@elearning/api-client";
 
-const ADMIN_ROLES = new Set(["super_admin", "admin"]);
-
 export default async function AdminCompetencesPage() {
-  const platformRole = await getPlatformRole();
-  if (!ADMIN_ROLES.has(platformRole)) redirect("/dashboard");
+  const permissions = await getPermissions();
+  if (!can(permissions, "view.admin_competences")) redirect("/dashboard");
 
   const api = await getApiClient();
   const competences: CompetenceDto[] = await api.competence.list().catch(() => []);
@@ -132,3 +131,4 @@ export default async function AdminCompetencesPage() {
     </div>
   );
 }
+

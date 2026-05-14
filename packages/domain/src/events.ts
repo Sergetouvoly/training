@@ -144,3 +144,92 @@ export interface ComplianceTwinSnapshottedPayload {
 export type RegulatoryUpdateDetected = DomainEvent<RegulatoryUpdateDetectedPayload>;
 export type AuditBundleExported = DomainEvent<AuditBundleExportedPayload>;
 export type ComplianceTwinSnapshotted = DomainEvent<ComplianceTwinSnapshottedPayload>;
+
+// ─── Assignment (Phase 2a) ────────────────────────────────
+// Refs: SPEC.md §7 — assignation module/parcours
+
+export interface AssignmentCreatedPayload {
+  readonly assignment_id: string;
+  readonly assignee_id: string;   // user_id de l'apprenant
+  readonly assigner_id: string;   // user_id de celui qui assigne
+  readonly resource_type: "module" | "path";
+  readonly resource_id: string;
+  readonly due_date: string | null;
+}
+
+export interface AssignmentDeletedPayload {
+  readonly assignment_id: string;
+  readonly assignee_id: string;
+  readonly deleted_by: string;    // user_id
+  readonly resource_type: "module" | "path";
+  readonly resource_id: string;
+}
+
+export type AssignmentCreated = DomainEvent<AssignmentCreatedPayload>;
+export type AssignmentDeleted = DomainEvent<AssignmentDeletedPayload>;
+
+// ─── RBAC (transverse, Phase 1) ──────────────────────────
+// Refs: SPEC.md §5 §8 — audit immuable des octrois/revocations de roles et permissions
+
+export interface UserRoleGrantedPayload {
+  readonly user_id: string;
+  readonly role_id: string;
+  readonly role_code: string;
+  readonly granted_by: string; // user_id
+}
+
+export interface UserRoleRevokedPayload {
+  readonly user_id: string;
+  readonly role_id: string;
+  readonly role_code: string;
+  readonly revoked_by: string; // user_id
+}
+
+export interface RoleCreatedPayload {
+  readonly role_id: string;
+  readonly role_code: string;
+  readonly created_by: string; // user_id, "system" pour seed
+}
+
+export interface RoleDeletedPayload {
+  readonly role_id: string;
+  readonly role_code: string;
+  readonly deleted_by: string;
+}
+
+// ─── Onboarding (Phase 2) ────────────────────────────────────────────────────
+// Refs: SPEC.md §8 US-1.1 — wizard première connexion apprenant
+
+export interface OnboardingCompletedPayload {
+  readonly user_id: string;
+  readonly completed_at: string;
+  readonly job_role: string;
+}
+
+export type OnboardingCompleted = DomainEvent<OnboardingCompletedPayload>;
+
+// ─── Scheduler — rappels automatiques (Phase 2) ──────────────────────────────
+// Refs: SPEC.md §9 US-2b.5 — cron notifications
+
+export interface ScheduledReminderSentPayload {
+  readonly learner_id: string;
+  readonly reminder_type: "stamp_expiring" | "assignment_due" | "streak_broken";
+  readonly resource_id?: string;
+  readonly sent_at: string;
+}
+
+export type ScheduledReminderSent = DomainEvent<ScheduledReminderSentPayload>;
+
+export interface RolePermissionsChangedPayload {
+  readonly role_id: string;
+  readonly role_code: string;
+  readonly added: readonly string[];   // permission codes ajoutees
+  readonly removed: readonly string[]; // permission codes retirees
+  readonly changed_by: string;
+}
+
+export type UserRoleGranted = DomainEvent<UserRoleGrantedPayload>;
+export type UserRoleRevoked = DomainEvent<UserRoleRevokedPayload>;
+export type RoleCreated = DomainEvent<RoleCreatedPayload>;
+export type RoleDeleted = DomainEvent<RoleDeletedPayload>;
+export type RolePermissionsChanged = DomainEvent<RolePermissionsChangedPayload>;

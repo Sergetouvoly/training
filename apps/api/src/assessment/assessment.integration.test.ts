@@ -7,7 +7,7 @@ import { AssessmentModule } from "./assessment.module.js";
 import { PrismaModule } from "../prisma/prisma.module.js";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { MfaGuard } from "../auth/mfa.guard.js";
-import { RolesGuard } from "../auth/roles.guard.js";
+import { PermissionsGuard } from "../auth/permissions.guard.js";
 import type { AuthUser } from "../auth/auth.types.js";
 
 // Refs: SPEC.md §9 US-1.3, R-1.2, R-1.3
@@ -75,7 +75,7 @@ async function createApp(user: AuthUser | undefined, prismaMock?: any) {
     imports: [PrismaModule, AssessmentModule],
     providers: [
       { provide: APP_GUARD, useClass: MfaGuard },
-      { provide: APP_GUARD, useClass: RolesGuard },
+      { provide: APP_GUARD, useClass: PermissionsGuard },
     ],
   })
     .overrideProvider(PrismaService)
@@ -103,9 +103,9 @@ async function req(app: INestApplication, method: string, path: string, body?: a
   }
 }
 
-const admin: AuthUser = { user_id: "u1", email: "admin@holenek.fr", display_name: "Admin", platform_role: "admin", mfa_verified: true };
-const learner: AuthUser = { user_id: "u2", email: "l@holenek.fr", display_name: "Learner", platform_role: "learner", mfa_verified: true };
-const trainer: AuthUser = { user_id: "u3", email: "t@holenek.fr", display_name: "Trainer", platform_role: "trainer", mfa_verified: true };
+const admin: AuthUser = { user_id: "u1", email: "admin@holenek.fr", display_name: "Admin", app_role: "admin", permissions: ["user.read", "learning_path.create", "module.create", "evaluation_item.create"], mfa_verified: true };
+const learner: AuthUser = { user_id: "u2", email: "l@holenek.fr", display_name: "Learner", app_role: "learner", permissions: [], mfa_verified: true };
+const trainer: AuthUser = { user_id: "u3", email: "t@holenek.fr", display_name: "Trainer", app_role: "trainer", permissions: ["evaluation_item.create"], mfa_verified: true };
 
 describe("Assessment integration", () => {
   it("admin creates items, learner evaluates → Stamp + CompetenceValidated (US-1.3)", async () => {
@@ -166,3 +166,4 @@ describe("Assessment integration", () => {
     await app.close();
   });
 });
+

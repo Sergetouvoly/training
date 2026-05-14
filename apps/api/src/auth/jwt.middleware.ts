@@ -18,14 +18,16 @@ export class JwtMiddleware implements NestMiddleware {
           user_id: payload.user_id,
           email: payload.email,
           display_name: payload.display_name,
-          platform_role: payload.platform_role,
+          app_role: payload.app_role,
+          permissions: payload.permissions,
           mfa_verified: payload.mfa_verified,
         };
         (req as Request & { user: AuthUser }).user = user;
       } catch {
-        // Token invalide — request.user reste undefined, RolesGuard rejettera
+        // Token invalide — request.user reste undefined, PermissionsGuard rejettera
       }
     }
     next();
   }
 }
+

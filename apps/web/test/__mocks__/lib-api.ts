@@ -24,3 +24,7 @@ export async function getApiClient() {
     },
   };
 }
+
+export async function getPermissions() {
+  return [];
+}

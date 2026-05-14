@@ -8,6 +8,12 @@ import type {
   UserDto, CreateUserDto, UpdateUserDto, ResetPasswordDto,
   CompetenceDto, CreateCompetenceDto, UpdateCompetenceDto,
   AppConfigEntry,
+  PermissionDto,
+  RoleDto, RoleWithPermissionsDto, CreateRoleDto, UserRoleDto,
+  TrashType, TrashListDto, PurgeExpiredResult,
+  UserPermissionDto, UpsertUserPermissionDto,
+  AssignmentDto, CreateAssignmentDto,
+  TeamAggregate, TeamModuleProgress, AuditBundleExport,
 } from "./types.js";
 
 export function makeLearningApi(client: ApiClient) {
@@ -38,6 +44,15 @@ export function makeLearningApi(client: ApiClient) {
 
     deleteModule: (id: string) =>
       client.delete<void>(`/learning/modules/${id}`),
+
+    updateQuizConfig: (id: string, dto: {
+      quiz_bank_id?: string | null;
+      passing_score?: number;
+      max_attempts?: number;
+      cooldown_minutes?: number;
+      show_explanations?: boolean;
+    }) =>
+      client.patch<Module>(`/learning/modules/${id}/quiz-config`, dto),
 
     createPath: (dto: { title_fr: string; target_role: string; module_sequence: string[]; is_mandatory: boolean }) =>
       client.post<LearningPath>("/learning/paths", dto),
@@ -80,6 +95,9 @@ export function makeAssessmentApi(client: ApiClient) {
     importCsv: (csv: string) =>
       client.post<CsvImportResult>("/assessment/items/import-csv", { csv }),
 
+    importJson: (json: string) =>
+      client.post<CsvImportResult>("/assessment/items/import-json", { json }),
+
     drawItems: (bankId: string, count = 10, signal?: AbortSignal) =>
       client.get<EvaluationItem[]>(`/assessment/items/draw?bank_id=${bankId}&count=${count}`, signal),
 
@@ -101,16 +119,27 @@ export function makePassportApi(client: ApiClient) {
 export function makeUserApi(client: ApiClient) {
   return {
     getMe: (signal?: AbortSignal) =>
-      client.get<{ id: string; mfa_enabled: boolean; email: string; display_name: string; platform_role: string }>("/users/me", signal),
+      client.get<{ id: string; mfa_enabled: boolean; email: string; display_name: string; app_role: string; platform_role?: string; team_id?: string | null }>("/users/me", signal),
 
     exportGdpr: (signal?: AbortSignal) =>
       client.get<GdprExport>("/users/me/export", signal),
 
-    listLearners: (signal?: AbortSignal) =>
-      client.get<LearnerSummary[]>("/users/admin/learners", signal),
+    listLearners: (params?: { team_id?: string }, signal?: AbortSignal) => {
+      const qs = params?.team_id ? `?team_id=${encodeURIComponent(params.team_id)}` : "";
+      return client.get<LearnerSummary[]>(`/users/admin/learners${qs}`, signal);
+    },
 
     getLearnerDetail: (learnerId: string, signal?: AbortSignal) =>
       client.get<LearnerDetail>(`/users/admin/learners/${learnerId}`, signal),
+
+    updateMe: (dto: { display_name?: string; current_password?: string; new_password?: string }) =>
+      client.patch<{ id: string; display_name: string; email: string }>("/users/me", dto),
+
+    checkOnboarding: (signal?: AbortSignal) =>
+      client.get<{ completed: boolean }>("/users/me/onboarding", signal),
+
+    completeOnboarding: (job_role: string) =>
+      client.post<void>("/users/me/onboarding/complete", { job_role }),
   };
 }
 
@@ -164,6 +193,21 @@ export function makeCompetenceApi(client: ApiClient) {
   };
 }
 
+export function makeTrashApi(client: ApiClient) {
+  return {
+    list: (type?: TrashType, signal?: AbortSignal) => {
+      const url = type ? `/trash?type=${type}` : "/trash";
+      return client.get<TrashListDto>(url, signal);
+    },
+    restore: (type: TrashType, id: string) =>
+      client.post<unknown>(`/trash/${type}/${id}/restore`, {}),
+    purgeOne: (type: TrashType, id: string) =>
+      client.delete<void>(`/trash/${type}/${id}`),
+    purgeExpired: () =>
+      client.delete<PurgeExpiredResult>("/trash"),
+  };
+}
+
 export function makeConfigApi(client: ApiClient) {
   return {
     list: (signal?: AbortSignal) =>
@@ -183,3 +227,93 @@ export function makeNotificationApi(client: ApiClient) {
       client.post<{ count: number }>("/social/notifications/mark-read", {}),
   };
 }
+
+export function makeUserPermissionApi(client: ApiClient) {
+  return {
+    list: (userId: string, signal?: AbortSignal) =>
+      client.get<UserPermissionDto[]>(`/users/${userId}/permissions`, signal),
+
+    upsert: (userId: string, code: string, dto: UpsertUserPermissionDto) =>
+      client.put<UserPermissionDto>(`/users/${userId}/permissions/${encodeURIComponent(code)}`, dto),
+
+    remove: (userId: string, code: string) =>
+      client.delete<void>(`/users/${userId}/permissions/${encodeURIComponent(code)}`),
+  };
+}
+
+export function makeAssignmentApi(client: ApiClient) {
+  return {
+    list: (params?: { assignee_id?: string; resource_type?: string }, signal?: AbortSignal) => {
+      const qs = new URLSearchParams();
+      if (params?.assignee_id) qs.set("assignee_id", params.assignee_id);
+      if (params?.resource_type) qs.set("resource_type", params.resource_type);
+      const query = qs.toString();
+      return client.get<AssignmentDto[]>(query ? `/assignments?${query}` : "/assignments", signal);
+    },
+
+    listForAssignee: (assigneeId: string, signal?: AbortSignal) =>
+      client.get<AssignmentDto[]>(`/assignments/assignee/${assigneeId}`, signal),
+
+    create: (dto: CreateAssignmentDto) =>
+      client.post<AssignmentDto>("/assignments", dto),
+
+    remove: (id: string) =>
+      client.delete<{ deleted: boolean }>(`/assignments/${id}`),
+  };
+}
+
+export function makePermissionApi(client: ApiClient) {
+  return {
+    listAll: (signal?: AbortSignal) =>
+      client.get<PermissionDto[]>("/permissions", signal),
+
+    listAllGrants: (signal?: AbortSignal) =>
+      client.get<Record<string, { permission_code: string; grants: { type: string; user: { id: string; display_name: string; email: string; app_role: string } }[] }>>("/permissions/grants", signal),
+  };
+}
+
+export function makeRoleApi(client: ApiClient) {
+  return {
+    listAll: (signal?: AbortSignal) =>
+      client.get<RoleDto[]>("/roles", signal),
+
+    getOne: (id: string, signal?: AbortSignal) =>
+      client.get<RoleWithPermissionsDto>(`/roles/${id}`, signal),
+
+    create: (dto: CreateRoleDto) =>
+      client.post<RoleDto>("/roles", dto),
+
+    remove: (id: string) =>
+      client.delete<void>(`/roles/${id}`),
+
+    setPermissions: (id: string, permissions: string[]) =>
+      client.put<void>(`/roles/${id}/permissions`, { permissions }),
+
+    getUserRoles: (userId: string, signal?: AbortSignal) =>
+      client.get<UserRoleDto[]>(`/users/${userId}/roles`, signal),
+
+    grantRole: (userId: string, roleId: string) =>
+      client.post<void>(`/users/${userId}/roles/${roleId}`, {}),
+
+    revokeRole: (userId: string, roleId: string) =>
+      client.delete<void>(`/users/${userId}/roles/${roleId}`),
+  };
+}
+
+export function makeSimulatorApi(client: ApiClient) {
+  return {
+    getTeamAnalytics: (teamId: string, signal?: AbortSignal) =>
+      client.get<TeamAggregate>(`/simulator/analytics/team?team_id=${encodeURIComponent(teamId)}`, signal),
+
+    getTeamModuleProgress: (teamId: string, signal?: AbortSignal) =>
+      client.get<TeamModuleProgress[]>(`/simulator/analytics/team/modules?team_id=${encodeURIComponent(teamId)}`, signal),
+  };
+}
+
+export function makeAuditApi(client: ApiClient) {
+  return {
+    exportLearnerBundle: (learnerId: string, signal?: AbortSignal) =>
+      client.get<AuditBundleExport>(`/audit/learners/${learnerId}/export`, signal),
+  };
+}
+

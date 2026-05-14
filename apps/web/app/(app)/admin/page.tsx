@@ -1,5 +1,6 @@
 // Refs: SPEC.md §7 — tableau de bord super_admin/admin
-import { getApiClient, getPlatformRole } from "../../../lib/api";
+import { getApiClient, getPermissions } from "../../../lib/api";
+import { can } from "../../../lib/permissions";
 import Link from "next/link";
 import {
   RolesChart, ModulesStatusChart, LearnersProgressChart,
@@ -23,8 +24,8 @@ const ROLE_BADGE: Record<string, string> = {
 };
 
 export default async function AdminDashboardPage() {
-  const [api, platformRole] = await Promise.all([getApiClient(), getPlatformRole()]);
-  const isSuperAdmin = platformRole === "super_admin";
+  const [api, permissions] = await Promise.all([getApiClient(), getPermissions()]);
+  const canReadConfig = can(permissions, "app_config.read");
 
   const [users, modules, paths, learners, competences, config] = await Promise.all([
     api.admin.listUsers().catch(() => [] as Awaited<ReturnType<typeof api.admin.listUsers>>),
@@ -32,7 +33,7 @@ export default async function AdminDashboardPage() {
     api.learning.listPaths().catch(() => [] as Awaited<ReturnType<typeof api.learning.listPaths>>),
     api.user.listLearners().catch(() => [] as Awaited<ReturnType<typeof api.user.listLearners>>),
     api.competence.list().catch(() => [] as Awaited<ReturnType<typeof api.competence.list>>),
-    isSuperAdmin
+    canReadConfig
       ? api.config.list().catch(() => [] as Awaited<ReturnType<typeof api.config.list>>)
       : Promise.resolve([] as Awaited<ReturnType<typeof api.config.list>>),
   ]);
@@ -278,7 +279,7 @@ export default async function AdminDashboardPage() {
       </section>
 
       {/* Configuration système (super_admin only) */}
-      {isSuperAdmin && config.length > 0 && (
+      {canReadConfig && config.length > 0 && (
         <section>
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-base font-bold text-primary-deep">Configuration système</h2>
@@ -292,3 +293,5 @@ export default async function AdminDashboardPage() {
     </div>
   );
 }
+
+

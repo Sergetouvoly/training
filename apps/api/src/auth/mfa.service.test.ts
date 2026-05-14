@@ -20,7 +20,7 @@ function makeUser(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     id: "u-admin",
     email: "admin@holenek.fr",
-    platform_role: "admin",
+    app_role: "admin",
     mfa_enabled: false,
     mfa_secret: null,
     ...overrides,
@@ -94,7 +94,7 @@ describe("MfaService", () => {
     const prisma = makePrismaStub(user);
     const svc = new MfaService(prisma);
 
-    const result = await svc.disableMfa({ targetUserId: user.id, callerId: user.id, callerRole: "admin", code: token });
+    const result = await svc.disableMfa({ targetUserId: user.id, callerId: user.id, callerCanDisableOthers: false, code: token });
 
     expect(result.mfa_enabled).toBe(false);
     expect(prisma.user.update).toHaveBeenCalledWith(
@@ -105,7 +105,7 @@ describe("MfaService", () => {
   it("disableMfa — lève UnauthorizedException si l'utilisateur fournit un code invalide", async () => {
     const user = makeUser({ mfa_enabled: true, mfa_secret: SECRET });
     const svc = new MfaService(makePrismaStub(user));
-    await expect(svc.disableMfa({ targetUserId: user.id, callerId: user.id, callerRole: "admin", code: "000000" }))
+    await expect(svc.disableMfa({ targetUserId: user.id, callerId: user.id, callerCanDisableOthers: false, code: "000000" }))
       .rejects.toThrow(UnauthorizedException);
   });
 
@@ -116,7 +116,7 @@ describe("MfaService", () => {
     const prisma = makePrismaStub(target);
     const svc = new MfaService(prisma);
 
-    const result = await svc.disableMfa({ targetUserId: target.id, callerId: "u-super", callerRole: "super_admin" });
+    const result = await svc.disableMfa({ targetUserId: target.id, callerId: "u-super", callerCanDisableOthers: true });
 
     expect(result.mfa_enabled).toBe(false);
   });
@@ -124,13 +124,14 @@ describe("MfaService", () => {
   it("disableMfa — non-super_admin ne peut pas désactiver le MFA d'un autre user", async () => {
     const target = makeUser({ id: "u-target", mfa_enabled: true, mfa_secret: SECRET });
     const svc = new MfaService(makePrismaStub(target));
-    await expect(svc.disableMfa({ targetUserId: target.id, callerId: "u-other", callerRole: "admin" }))
+    await expect(svc.disableMfa({ targetUserId: target.id, callerId: "u-other", callerCanDisableOthers: false }))
       .rejects.toThrow(ForbiddenException);
   });
 
   it("disableMfa — lève NotFoundException si user cible inconnu", async () => {
     const svc = new MfaService(makePrismaStub(null));
-    await expect(svc.disableMfa({ targetUserId: "ghost", callerId: "u-super", callerRole: "super_admin" }))
+    await expect(svc.disableMfa({ targetUserId: "ghost", callerId: "u-super", callerCanDisableOthers: true }))
       .rejects.toThrow(NotFoundException);
   });
 });
+

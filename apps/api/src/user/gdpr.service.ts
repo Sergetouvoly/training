@@ -35,7 +35,7 @@ export class GdprService {
         id: user.id,
         email: user.email,
         display_name: user.display_name,
-        platform_role: user.platform_role,
+        app_role: user.app_role,
         created_at: user.created_at.toISOString(),
       },
       learner: user.learner

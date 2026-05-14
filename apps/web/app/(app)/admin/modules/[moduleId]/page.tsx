@@ -1,18 +1,17 @@
 // Refs: SPEC.md §8 — admin édite le contenu sans code
 import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
-import { getApiClient, getPlatformRole } from "../../../../../lib/api";
+import { getApiClient, getPermissions } from "../../../../../lib/api";
+import { can } from "../../../../../lib/permissions";
 import { AdminModuleEditorClient } from "./AdminModuleEditorClient";
-
-const CONTENT_ROLES = new Set(["super_admin", "admin", "trainer"]);
 
 export default async function AdminModulePage({
   params,
 }: {
   readonly params: Promise<{ moduleId: string }>;
 }) {
-  const [{ moduleId }, platformRole] = await Promise.all([params, getPlatformRole()]);
-  if (!CONTENT_ROLES.has(platformRole)) redirect("/dashboard");
+  const [{ moduleId }, permissions] = await Promise.all([params, getPermissions()]);
+  if (!can(permissions, "view.admin_modules")) redirect("/dashboard");
 
   const api = await getApiClient();
   const mod = await api.learning.getModule(moduleId).catch(() => null);
@@ -44,3 +43,4 @@ export default async function AdminModulePage({
     </section>
   );
 }
+

@@ -61,7 +61,7 @@ describe("ItemService", () => {
     prisma.evaluationItem.findFirst.mockResolvedValue({ id: "i1" });
     const result = await service.findById("i1");
     expect(result.id).toBe("i1");
-    expect(prisma.evaluationItem.findFirst).toHaveBeenCalledWith({ where: { id: "i1" } });
+    expect(prisma.evaluationItem.findFirst).toHaveBeenCalledWith({ where: { id: "i1", deleted_at: null } });
   });
 
   it("throws NotFoundException for unknown item", async () => {
@@ -72,7 +72,7 @@ describe("ItemService", () => {
   it("lists items by bank", async () => {
     prisma.evaluationItem.findMany.mockResolvedValue([]);
     await service.listByBank("bank-1");
-    expect(prisma.evaluationItem.findMany).toHaveBeenCalledWith({ where: { bank_id: "bank-1" } });
+    expect(prisma.evaluationItem.findMany).toHaveBeenCalledWith({ where: { bank_id: "bank-1", deleted_at: null } });
   });
 
   it("draws stratified items across difficulty levels (R-1.2)", async () => {
@@ -106,6 +106,7 @@ describe("ItemService", () => {
     const result = await service.listAll();
     expect(result).toHaveLength(2);
     expect(prisma.evaluationItem.findMany).toHaveBeenCalledWith({
+      where: { deleted_at: null },
       orderBy: { created_at: "desc" },
     });
   });
@@ -131,12 +132,14 @@ describe("ItemService", () => {
 
   // ─── deleteItem ────────────────────────────────────────
 
-  it("deleteItem removes the item", async () => {
+  it("deleteItem soft-deletes the item", async () => {
     prisma.evaluationItem.findFirst.mockResolvedValue({ id: "i1" });
-    prisma.evaluationItem.delete.mockResolvedValue({ id: "i1" });
+    prisma.evaluationItem.update.mockResolvedValue({ id: "i1" });
 
     await service.remove("i1");
-    expect(prisma.evaluationItem.delete).toHaveBeenCalledWith({ where: { id: "i1" } });
+    const call = prisma.evaluationItem.update.mock.calls[0][0];
+    expect(call.where).toEqual({ id: "i1" });
+    expect(call.data.deleted_at).toBeInstanceOf(Date);
   });
 
   it("deleteItem throws NotFoundException for unknown item", async () => {

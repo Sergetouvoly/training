@@ -1,18 +1,17 @@
 // Refs: SPEC-CONTENT.md §6.1 — édition parcours admin
 import { redirect, notFound } from "next/navigation";
-import { getApiClient, getPlatformRole } from "../../../../../lib/api";
+import { getApiClient, getPermissions } from "../../../../../lib/api";
+import { can } from "../../../../../lib/permissions";
 import { EditPathForm } from "./EditPathForm";
 import Link from "next/link";
-
-const CONTENT_ROLES = new Set(["super_admin", "admin", "trainer"]);
 
 export default async function EditPathPage({
   params,
 }: {
   readonly params: Promise<{ pathId: string }>;
 }) {
-  const [{ pathId }, platformRole] = await Promise.all([params, getPlatformRole()]);
-  if (!CONTENT_ROLES.has(platformRole)) redirect("/dashboard");
+  const [{ pathId }, permissions] = await Promise.all([params, getPermissions()]);
+  if (!can(permissions, "view.admin_paths")) redirect("/dashboard");
 
   const api = await getApiClient();
 
@@ -47,3 +46,4 @@ export default async function EditPathPage({
     </div>
   );
 }
+

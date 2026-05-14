@@ -59,7 +59,7 @@ describe("LearningService", () => {
     prisma.learningPath.findFirst.mockResolvedValue({ id: "lp1" });
     const result = await service.findPathById("lp1");
     expect(result.id).toBe("lp1");
-    expect(prisma.learningPath.findFirst).toHaveBeenCalledWith({ where: { id: "lp1" } });
+    expect(prisma.learningPath.findFirst).toHaveBeenCalledWith({ where: { id: "lp1", deleted_at: null } });
   });
 
   it("throws NotFoundException for unknown path", async () => {
@@ -70,14 +70,16 @@ describe("LearningService", () => {
   it("lists all paths ordered by created_at desc", async () => {
     prisma.learningPath.findMany.mockResolvedValue([]);
     await service.listPaths();
-    expect(prisma.learningPath.findMany).toHaveBeenCalledWith({ orderBy: { created_at: "desc" } });
+    expect(prisma.learningPath.findMany).toHaveBeenCalledWith({ where: { deleted_at: null }, orderBy: { created_at: "desc" } });
   });
 
-  it("deletes a path by id", async () => {
+  it("soft-deletes a path by id", async () => {
     prisma.learningPath.findFirst.mockResolvedValue({ id: "lp1" });
-    prisma.learningPath.delete.mockResolvedValue({ id: "lp1" });
+    prisma.learningPath.update.mockResolvedValue({ id: "lp1" });
     await service.deletePath("lp1");
-    expect(prisma.learningPath.delete).toHaveBeenCalledWith({ where: { id: "lp1" } });
+    const call = prisma.learningPath.update.mock.calls[0][0];
+    expect(call.where).toEqual({ id: "lp1" });
+    expect(call.data.deleted_at).toBeInstanceOf(Date);
   });
 
   // ─── Module ────────────────────────────────────────────
@@ -103,7 +105,7 @@ describe("LearningService", () => {
     prisma.module.findFirst.mockResolvedValue({ id: "m1" });
     const result = await service.findModuleById("m1");
     expect(result.id).toBe("m1");
-    expect(prisma.module.findFirst).toHaveBeenCalledWith({ where: { id: "m1" } });
+    expect(prisma.module.findFirst).toHaveBeenCalledWith({ where: { id: "m1", deleted_at: null } });
   });
 
   it("throws NotFoundException for unknown module", async () => {

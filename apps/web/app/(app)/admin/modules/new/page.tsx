@@ -1,12 +1,11 @@
 // Refs: SPEC-CONTENT.md §6.2 — création module admin
 import { redirect } from "next/navigation";
-import { getPlatformRole, getApiClient } from "../../../../../lib/api";
-
-const CONTENT_ROLES = new Set(["super_admin", "admin", "trainer"]);
+import { getPermissions, getApiClient } from "../../../../../lib/api";
+import { can } from "../../../../../lib/permissions";
 
 export default async function NewModulePage() {
-  const platformRole = await getPlatformRole();
-  if (!platformRole || !CONTENT_ROLES.has(platformRole)) redirect("/dashboard");
+  const permissions = await getPermissions();
+  if (!can(permissions, "view.admin_modules")) redirect("/dashboard");
 
   const api = await getApiClient();
   const mod = await api.learning.createModule({
@@ -18,3 +17,4 @@ export default async function NewModulePage() {
 
   redirect(`/admin/modules/${mod.id}`);
 }
+

@@ -1,9 +1,8 @@
 // Refs: SPEC-CONTENT.md §6.1 — liste apprenants admin
 import { redirect } from "next/navigation";
-import { getApiClient, getPlatformRole } from "../../../../lib/api";
+import { getApiClient, getPermissions } from "../../../../lib/api";
+import { can } from "../../../../lib/permissions";
 import Link from "next/link";
-
-const ADMIN_ROLES = new Set(["super_admin", "admin"]);
 
 const ROLE_LABELS: Record<string, string> = {
   hr: "RH", developer: "Dev", manager: "Manager", finance: "Finance",
@@ -16,8 +15,8 @@ const STATE_COLORS = {
 };
 
 export default async function AdminLearnersPage() {
-  const platformRole = await getPlatformRole();
-  if (!ADMIN_ROLES.has(platformRole)) redirect("/dashboard");
+  const permissions = await getPermissions();
+  if (!can(permissions, "view.admin_learners")) redirect("/dashboard");
 
   const api = await getApiClient();
   const learners = await api.user.listLearners().catch(
@@ -161,3 +160,4 @@ export default async function AdminLearnersPage() {
     </div>
   );
 }
+

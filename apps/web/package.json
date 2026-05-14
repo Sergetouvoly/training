@@ -15,6 +15,7 @@
   "dependencies": {
     "@auth/core": "^0.34.3",
     "@elearning/api-client": "workspace:*",
+    "@elearning/domain": "workspace:*",
     "@elearning/i18n": "workspace:*",
     "@elearning/ui": "workspace:*",
     "@tiptap/core": "^3.23.1",

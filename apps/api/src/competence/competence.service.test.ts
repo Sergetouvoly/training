@@ -32,17 +32,17 @@ describe("CompetenceService", () => {
     prisma.competence.findMany.mockResolvedValue([sample]);
     const result = await service.listAll();
     expect(result).toHaveLength(1);
-    expect(prisma.competence.findMany).toHaveBeenCalledWith({ orderBy: { code: "asc" } });
+    expect(prisma.competence.findMany).toHaveBeenCalledWith({ where: { deleted_at: null }, orderBy: { code: "asc" } });
   });
 
   it("findById returns competence", async () => {
-    prisma.competence.findUnique.mockResolvedValue(sample);
+    prisma.competence.findFirst.mockResolvedValue(sample);
     const result = await service.findById("c1");
     expect(result.code).toBe("RGPD-01");
   });
 
   it("findById throws NotFoundException for unknown id", async () => {
-    prisma.competence.findUnique.mockResolvedValue(null);
+    prisma.competence.findFirst.mockResolvedValue(null);
     await expect(service.findById("nope")).rejects.toThrow(NotFoundException);
   });
 
@@ -65,7 +65,7 @@ describe("CompetenceService", () => {
   });
 
   it("update patches label fields", async () => {
-    prisma.competence.findUnique.mockResolvedValue(sample);
+    prisma.competence.findFirst.mockResolvedValue(sample);
     prisma.competence.update.mockResolvedValue({ ...sample, label_fr: "RGPD avancé" });
 
     const result = await service.update("c1", { label_fr: "RGPD avancé" });
@@ -77,20 +77,22 @@ describe("CompetenceService", () => {
   });
 
   it("update throws NotFoundException for unknown id", async () => {
-    prisma.competence.findUnique.mockResolvedValue(null);
+    prisma.competence.findFirst.mockResolvedValue(null);
     await expect(service.update("nope", { label_fr: "X" })).rejects.toThrow(NotFoundException);
   });
 
-  it("remove deletes competence", async () => {
-    prisma.competence.findUnique.mockResolvedValue(sample);
-    prisma.competence.delete.mockResolvedValue(sample);
+  it("remove soft-deletes competence", async () => {
+    prisma.competence.findFirst.mockResolvedValue(sample);
+    prisma.competence.update.mockResolvedValue(sample);
 
     await service.remove("c1");
-    expect(prisma.competence.delete).toHaveBeenCalledWith({ where: { id: "c1" } });
+    const call = prisma.competence.update.mock.calls[0][0];
+    expect(call.where).toEqual({ id: "c1" });
+    expect(call.data.deleted_at).toBeInstanceOf(Date);
   });
 
   it("remove throws NotFoundException for unknown id", async () => {
-    prisma.competence.findUnique.mockResolvedValue(null);
+    prisma.competence.findFirst.mockResolvedValue(null);
     await expect(service.remove("nope")).rejects.toThrow(NotFoundException);
   });
 });

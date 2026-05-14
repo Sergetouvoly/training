@@ -1,9 +1,9 @@
 // Refs: SPEC-CONTENT.md §6.1 — détail apprenant admin
 import { redirect, notFound } from "next/navigation";
-import { getApiClient, getPlatformRole } from "../../../../../lib/api";
+import { getApiClient, getPermissions } from "../../../../../lib/api";
+import { can } from "../../../../../lib/permissions";
 import Link from "next/link";
-
-const ADMIN_ROLES = new Set(["super_admin", "admin"]);
+import { AssignResourceForm } from "./AssignResourceForm";
 
 const STATE_CONFIG = {
   green:  { label: "Validé",    cls: "bg-green-50 text-green-700 border-green-200" },
@@ -20,14 +20,15 @@ export default async function AdminLearnerDetailPage({
 }: {
   readonly params: Promise<{ learnerId: string }>;
 }) {
-  const [{ learnerId }, platformRole] = await Promise.all([params, getPlatformRole()]);
-  if (!ADMIN_ROLES.has(platformRole)) redirect("/dashboard");
+  const [{ learnerId }, permissions] = await Promise.all([params, getPermissions()]);
+  if (!can(permissions, "view.admin_learners")) redirect("/dashboard");
 
   const api = await getApiClient();
 
-  const [learner, modules] = await Promise.all([
+  const [learner, modules, paths] = await Promise.all([
     api.user.getLearnerDetail(learnerId).catch(() => null),
     api.learning.listModules().catch(() => [] as Awaited<ReturnType<typeof api.learning.listModules>>),
+    api.learning.listPaths().catch(() => [] as Awaited<ReturnType<typeof api.learning.listPaths>>),
   ]);
 
   if (!learner) notFound();
@@ -73,8 +74,25 @@ export default async function AdminLearnerDetailPage({
         <div className="shrink-0 text-right">
           <p className="text-3xl font-extrabold text-primary-deep tabular-nums">{learner.stamp_count}</p>
           <p className="text-xs text-ink-soft">stamp{learner.stamp_count > 1 ? "s" : ""}</p>
+          {can(permissions, "audit.export") && (
+            <a
+              href={`/api/audit/learners/${learnerId}/export`}
+              download={`audit-${learnerId}.json`}
+              aria-label="Exporter le dossier d'audit"
+              className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-surface-warm px-3 py-1.5 text-xs font-medium text-ink hover:bg-surface hover:border-primary/30 transition-colors"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+              Dossier d'audit
+            </a>
+          )}
         </div>
       </div>
+
+      {can(permissions, "assignment.create") && (
+        <AssignResourceForm learnerId={learner.user_id} modules={modules} paths={paths} />
+      )}
 
       <div className="grid gap-6 lg:grid-cols-2">
 
@@ -150,9 +168,24 @@ export default async function AdminLearnerDetailPage({
                         <p className="text-sm font-semibold truncate">{stamp.competence_label_fr}</p>
                         <p className="text-[11px] opacity-70 font-mono mt-0.5">{stamp.competence_code}</p>
                       </div>
-                      <span className="shrink-0 rounded-full border px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide">
-                        {cfg.label}
-                      </span>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <span className="rounded-full border px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide">
+                          {cfg.label}
+                        </span>
+                        {can(permissions, "certificate.download") && (
+                          <a
+                            href={`/api/audit/stamps/${stamp.id}/certificate`}
+                            download
+                            aria-label={`Télécharger le certificat PDF pour ${stamp.competence_label_fr}`}
+                            className="flex items-center gap-1 rounded-lg bg-white/60 px-2 py-0.5 text-[11px] font-medium hover:bg-white transition-colors"
+                          >
+                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                            </svg>
+                            PDF
+                          </a>
+                        )}
+                      </div>
                     </div>
                     <div className="mt-2.5 flex items-center gap-4 text-[11px] opacity-80">
                       <span>Score : <strong>{Math.round(stamp.performance_score)}%</strong></span>
@@ -172,3 +205,4 @@ export default async function AdminLearnerDetailPage({
     </div>
   );
 }
+

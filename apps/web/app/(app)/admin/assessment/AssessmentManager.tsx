@@ -18,7 +18,7 @@ interface Props {
   readonly initialBankFilter?: string;
 }
 
-type Tab = "list" | "create" | "import";
+type Tab = "list" | "create" | "import" | "import-json";
 
 interface NewItemForm {
   bank_id: string;
@@ -57,6 +57,10 @@ export function AssessmentManager({ initialItems, initialBankFilter = "" }: Prop
   const [importLoading, setImportLoading] = useState(false);
   const [importResult, setImportResult] = useState<{ imported: number; errors: string[] } | null>(null);
 
+  const [jsonFile, setJsonFile] = useState<File | null>(null);
+  const [jsonLoading, setJsonLoading] = useState(false);
+  const [jsonResult, setJsonResult] = useState<{ imported: number; errors: string[] } | null>(null);
+
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -64,7 +68,7 @@ export function AssessmentManager({ initialItems, initialBankFilter = "" }: Prop
   const [filterBank, setFilterBank] = useState(initialBankFilter);
   const [filterFormat, setFilterFormat] = useState("");
 
-  async function handleCreate(e: React.FormEvent) {
+  async function handleCreate(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setCreateLoading(true);
     setCreateError(null);
@@ -128,7 +132,7 @@ export function AssessmentManager({ initialItems, initialBankFilter = "" }: Prop
     }
   }
 
-  async function handleImport(e: React.FormEvent) {
+  async function handleImport(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setImportLoading(true);
     setImportResult(null);
@@ -154,6 +158,34 @@ export function AssessmentManager({ initialItems, initialBankFilter = "" }: Prop
     }
   }
 
+  async function handleJsonImport(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!jsonFile) return;
+    setJsonLoading(true);
+    setJsonResult(null);
+    try {
+      const text = await jsonFile.text();
+      const res = await fetch("/api/assessment/import-json", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ json: text }),
+      });
+      if (!res.ok) { setJsonResult({ imported: 0, errors: ["Erreur serveur lors de l'import."] }); return; }
+      const result = await res.json();
+      setJsonResult(result);
+      if (result.imported > 0) {
+        const refreshed = await fetch("/api/assessment/items");
+        if (refreshed.ok) setItems(await refreshed.json());
+        setJsonFile(null);
+        router.refresh();
+      }
+    } catch {
+      setJsonResult({ imported: 0, errors: ["Impossible de joindre le serveur."] });
+    } finally {
+      setJsonLoading(false);
+    }
+  }
+
   const banks = [...new Set(items.map((i) => i.bank_id))].sort();
   const filtered = items.filter((i) => {
     if (filterBank && i.bank_id !== filterBank) return false;
@@ -165,7 +197,7 @@ export function AssessmentManager({ initialItems, initialBankFilter = "" }: Prop
     <div className="space-y-6">
       {/* Onglets */}
       <div className="flex gap-1 rounded-xl border border-surface-warm bg-surface p-1 w-fit">
-        {(["list", "create", "import"] as Tab[]).map((t) => (
+        {(["list", "create", "import", "import-json"] as Tab[]).map((t) => (
           <button
             key={t}
             type="button"
@@ -174,7 +206,7 @@ export function AssessmentManager({ initialItems, initialBankFilter = "" }: Prop
               tab === t ? "bg-white text-primary shadow-sm" : "text-ink-soft hover:text-ink"
             }`}
           >
-            {t === "list" ? "Liste" : t === "create" ? "Nouvelle question" : "Import CSV"}
+            {t === "list" ? "Liste" : t === "create" ? "Nouvelle question" : t === "import" ? "Import CSV" : "Import JSON"}
           </button>
         ))}
       </div>
@@ -458,6 +490,98 @@ export function AssessmentManager({ initialItems, initialBankFilter = "" }: Prop
             </button>
           </div>
         </form>
+      )}
+
+      {/* ── Import JSON ── */}
+      {tab === "import-json" && (
+        <div className="space-y-5 max-w-2xl">
+          <div className="rounded-xl border border-surface-warm bg-surface p-5 text-sm text-ink-soft space-y-2">
+            <p className="font-semibold text-ink">Format JSON attendu</p>
+            <code className="block rounded bg-white px-3 py-2 text-xs font-mono border border-surface-warm whitespace-pre">
+{`{
+  "bank_id": "bank-rgpd-2026",
+  "items": [
+    {
+      "format": "qcm_single",
+      "difficulty": 2,
+      "bloom_level": 3,
+      "concept_tags": ["rgpd"],
+      "question_fr": "...",
+      "choices": [
+        { "label": "A", "is_correct": true },
+        { "label": "B", "is_correct": false }
+      ]
+    },
+    {
+      "format": "true_false",
+      "difficulty": 1,
+      "bloom_level": 1,
+      "concept_tags": ["conformite"],
+      "question_fr": "...",
+      "correct_answer": "true"
+    }
+  ]
+}`}
+            </code>
+            <ul className="list-disc list-inside space-y-1 text-xs">
+              <li><strong>format</strong> : qcm_single | qcm_multi | true_false</li>
+              <li><strong>difficulty</strong> : 1–5 · <strong>bloom_level</strong> : 1–6</li>
+              <li><strong>choices</strong> : tableau requis pour QCM</li>
+              <li><strong>correct_answer</strong> : "true" / "false" pour true_false</li>
+            </ul>
+          </div>
+
+          <form onSubmit={handleJsonImport} className="rounded-2xl border border-surface-warm bg-white p-8 space-y-5">
+            <div>
+              <label htmlFor="json_file" className="mb-1.5 block text-sm font-medium text-ink">
+                Fichier JSON <span className="text-red-500">*</span>
+              </label>
+              <input
+                id="json_file"
+                type="file"
+                accept=".json,application/json"
+                required
+                onChange={(e) => { setJsonFile(e.target.files?.[0] ?? null); setJsonResult(null); }}
+                className="w-full rounded-xl border border-surface-warm bg-white px-4 py-2.5 text-sm text-ink file:mr-3 file:rounded-lg file:border-0 file:bg-primary/8 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-primary hover:file:bg-primary/12"
+              />
+              {jsonFile && (
+                <p className="mt-1.5 text-xs text-ink-soft">{jsonFile.name} ({(jsonFile.size / 1024).toFixed(1)} Ko)</p>
+              )}
+            </div>
+
+            {jsonResult && (
+              <div className={`rounded-xl px-4 py-3 text-sm ring-1 ${
+                jsonResult.errors.length === 0
+                  ? "bg-green-50 text-green-700 ring-green-200"
+                  : "bg-amber-50 text-amber-700 ring-amber-200"
+              }`}>
+                <p className="font-semibold mb-1">
+                  {jsonResult.imported} question{jsonResult.imported > 1 ? "s" : ""} importée{jsonResult.imported > 1 ? "s" : ""}
+                </p>
+                {jsonResult.errors.length > 0 && (
+                  <ul className="list-disc list-inside text-xs space-y-0.5 mt-1">
+                    {jsonResult.errors.map((err, i) => <li key={i}>{err}</li>)}
+                  </ul>
+                )}
+              </div>
+            )}
+
+            <div className="flex gap-3 pt-2">
+              <button
+                type="submit" disabled={jsonLoading || !jsonFile}
+                className="rounded-xl bg-primary px-6 py-2.5 text-sm font-semibold text-white hover:bg-primary-deep transition-colors disabled:opacity-50"
+              >
+                {jsonLoading ? "Import…" : "Importer"}
+              </button>
+              <button
+                type="button" onClick={() => { setJsonFile(null); setJsonResult(null); }}
+                className="rounded-xl border border-surface-warm px-6 py-2.5 text-sm font-semibold text-ink hover:bg-surface transition-colors"
+              >
+                Effacer
+              </button>
+            </div>
+          </form>
+        </div>
       )}
 
       {/* ── Import CSV ── */}

@@ -1,13 +1,14 @@
 // Refs: SPEC.md §7 — gestion des comptes utilisateurs (super_admin + admin uniquement)
 import { redirect } from "next/navigation";
-import { getApiClient, getPlatformRole } from "../../../../lib/api";
+import { getApiClient, getPermissions } from "../../../../lib/api";
+import { can } from "../../../../lib/permissions";
 import type { UserDto } from "@elearning/api-client";
 import { UserList } from "./UserList";
 
 export default async function AdminUsersPage() {
-  const [api, platformRole] = await Promise.all([getApiClient(), getPlatformRole()]);
+  const [api, permissions] = await Promise.all([getApiClient(), getPermissions()]);
 
-  if (platformRole !== "super_admin" && platformRole !== "admin") redirect("/dashboard");
+  if (!can(permissions, "view.admin_users")) redirect("/dashboard");
 
   let users: UserDto[] = [];
   let fetchError: string | null = null;
@@ -17,7 +18,7 @@ export default async function AdminUsersPage() {
     fetchError = err?.message ?? "Erreur lors du chargement des utilisateurs.";
   }
 
-  const canCreate = platformRole === "super_admin" || platformRole === "admin";
+  const canCreate = can(permissions, "user.create");
 
   return (
     <div className="space-y-6">
@@ -39,3 +40,5 @@ export default async function AdminUsersPage() {
     </div>
   );
 }
+
+

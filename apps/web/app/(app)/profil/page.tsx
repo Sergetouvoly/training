@@ -1,8 +1,11 @@
 // Refs: SPEC.md §8, US-1.1 MFA, US-1.4 export RGPD JSON, R-1.1 états Stamp
+import { redirect } from "next/navigation";
 import { fr } from "@elearning/i18n";
-import { getApiClient } from "../../../lib/api";
+import { getApiClient, getPermissions } from "../../../lib/api";
+import { can } from "../../../lib/permissions";
 import { auth } from "../../../auth";
 import { MfaPanel } from "./MfaPanel";
+import { AccountForm } from "./AccountForm";
 
 const stampConfig: Record<string, { badge: string; dot: string; label: string }> = {
   green:  { badge: "bg-green-50 text-green-700 ring-1 ring-green-200",  dot: "bg-green-400",  label: fr.profile.valid },
@@ -20,7 +23,8 @@ const ROLE_LABELS: Record<string, string> = {
 
 export default async function ProfilPage() {
   const t = fr;
-  const [api, session] = await Promise.all([getApiClient(), auth()]);
+  const [api, session, permissions] = await Promise.all([getApiClient(), auth(), getPermissions()]);
+  if (!can(permissions, "view.learner_profil")) redirect("/dashboard");
 
   const platformRole = (session as any)?.platformRole as string ?? "learner";
   const displayName = (session as any)?.displayName as string ?? session?.user?.email?.split("@")[0] ?? "Utilisateur";
@@ -101,6 +105,9 @@ export default async function ProfilPage() {
           {/* MFA */}
           <MfaPanel mfaEnabled={mfaEnabled} />
 
+          {/* Modifier le compte */}
+          <AccountForm displayName={displayName} />
+
           {/* Export RGPD */}
           <a
             href="/api/user/export"
@@ -147,9 +154,24 @@ export default async function ProfilPage() {
                           )}
                         </p>
                       </div>
-                      <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ${cfg.badge}`}>
-                        {cfg.label}
-                      </span>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${cfg.badge}`}>
+                          {cfg.label}
+                        </span>
+                        {can(permissions, "certificate.download") && (
+                          <a
+                            href={`/api/audit/stamps/${stamp.id}/certificate`}
+                            download
+                            aria-label={`${t.profile.downloadCertificateAriaLabel} ${stamp.competence.label_fr}`}
+                            className="flex items-center gap-1 rounded-lg border border-surface-warm px-2.5 py-1 text-xs font-medium text-ink hover:border-primary/30 hover:bg-surface transition-colors"
+                          >
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                            </svg>
+                            PDF
+                          </a>
+                        )}
+                      </div>
                     </li>
                   );
                 })}

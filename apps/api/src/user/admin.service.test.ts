@@ -9,7 +9,7 @@ function makeUser(overrides: Record<string, unknown> = {}) {
     id: "u1",
     email: "alice@holenek.fr",
     display_name: "Alice",
-    platform_role: "learner",
+    app_role: "learner",
     is_active: true,
     mfa_enabled: false,
     created_at: new Date("2026-01-01"),
@@ -64,11 +64,11 @@ describe("AdminService", () => {
     expect(result[0].job_role).toBe("hr");
   });
 
-  it("listUsers filters by platform_role", async () => {
-    prisma.user.findMany.mockResolvedValue([makeUser({ platform_role: "admin" })]);
+  it("listUsers filters by app_role", async () => {
+    prisma.user.findMany.mockResolvedValue([makeUser({ app_role: "admin" })]);
     await service.listUsers({ role: "admin" });
     const call = prisma.user.findMany.mock.calls[0][0];
-    expect(call.where).toMatchObject({ platform_role: "admin" });
+    expect(call.where).toMatchObject({ app_role: "admin" });
   });
 
   it("listUsers filters active users only", async () => {
@@ -122,7 +122,7 @@ describe("AdminService", () => {
     const result = await service.createUser({
       email: "alice@holenek.fr",
       display_name: "Alice",
-      platform_role: "learner",
+      app_role: "learner",
       password: "Test1234!",
       job_role: "hr",
       team_id: "pole-rh",
@@ -139,7 +139,7 @@ describe("AdminService", () => {
       service.createUser({
         email: "alice@holenek.fr",
         display_name: "Alice",
-        platform_role: "learner",
+        app_role: "learner",
         password: "Test1234!",
       }),
     ).rejects.toThrow(ConflictException);
@@ -177,8 +177,8 @@ describe("AdminService", () => {
 
   it("deleteUser throws ForbiddenException when deleting the last super_admin", async () => {
     const { ForbiddenException } = await import("@nestjs/common");
-    prisma.user.findUnique.mockResolvedValue(makeUser({ platform_role: "super_admin" }));
-    prisma.user.findMany.mockResolvedValue([makeUser({ platform_role: "super_admin" })]);
+    prisma.user.findUnique.mockResolvedValue(makeUser({ app_role: "super_admin" }));
+    prisma.user.findMany.mockResolvedValue([makeUser({ app_role: "super_admin" })]);
     await expect(service.deleteUser("u1")).rejects.toThrow(ForbiddenException);
   });
 
@@ -190,9 +190,9 @@ describe("AdminService", () => {
 
   it("updateUser throws ForbiddenException when demoting the last super_admin", async () => {
     const { ForbiddenException } = await import("@nestjs/common");
-    prisma.user.findUnique.mockResolvedValue(makeUser({ platform_role: "super_admin" }));
-    prisma.user.findMany.mockResolvedValue([makeUser({ platform_role: "super_admin" })]);
-    await expect(service.updateUser("u1", { platform_role: "admin" })).rejects.toThrow(ForbiddenException);
+    prisma.user.findUnique.mockResolvedValue(makeUser({ app_role: "super_admin" }));
+    prisma.user.findMany.mockResolvedValue([makeUser({ app_role: "super_admin" })]);
+    await expect(service.updateUser("u1", { app_role: "admin" })).rejects.toThrow(ForbiddenException);
   });
 
   // ─── resetPassword ─────────────────────────────────────
@@ -294,3 +294,4 @@ describe("AdminService", () => {
     await expect(service.getLearnerDetail("nope")).rejects.toThrow(NotFoundException);
   });
 });
+

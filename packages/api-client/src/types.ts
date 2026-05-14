@@ -144,6 +144,23 @@ export interface MiniQuizBlock {
   explanation: string;
 }
 
+export type ShapeType = "square" | "rectangle" | "circle" | "triangle" | "diamond" | "star" | "arrow";
+
+export interface ShapeBlock {
+  id: string;
+  type: "shape";
+  shape: ShapeType;
+  fill_color: string;
+  border_color?: string;
+  border_width?: number;
+  width: number;
+  height: number;
+  align: "left" | "center" | "right";
+  label?: string;
+  label_color?: string;
+  label_size?: number;
+}
+
 export type Block =
   | ParagraphBlock
   | HeadingBlock
@@ -161,7 +178,8 @@ export type Block =
   | DividerBlock
   | ScenarioBlock
   | KeyTakeawayBlock
-  | MiniQuizBlock;
+  | MiniQuizBlock
+  | ShapeBlock;
 
 // ── Structure d'une leçon ────────────────────────────────────────────────────
 
@@ -173,12 +191,21 @@ export interface Lesson {
 
 // ── Contenu complet d'un module ──────────────────────────────────────────────
 
+export interface ModuleQuizConfig {
+  passing_score: number;              // 0–100, défaut 70
+  max_attempts: number;               // 0 = illimité
+  cooldown_minutes: number;           // 0 = pas de délai
+  randomize_questions: boolean;
+  show_explanations: boolean;
+}
+
 export interface ModuleContent {
   lessons: Lesson[];
   audio_summary_url?: string;
   quiz_unlock_condition: "all_lessons_read";
   estimated_duration_minutes: number;
   lesson_unlock_mode?: "free" | "sequential";
+  quiz_config?: ModuleQuizConfig;
 }
 
 // ── Entités principales ───────────────────────────────────────────────────────
@@ -202,6 +229,7 @@ export interface Module {
   status: "draft" | "published";
   competence_ids: string[];
   content_fr: ModuleContent | null;
+  quiz_bank_id: string | null;
   estimated_duration_minutes: number | null;
   created_at: string;
 }
@@ -327,6 +355,7 @@ export interface LearnerSummary {
 }
 
 export interface LearnerDetail extends LearnerSummary {
+  user_id: string;
   stamps: {
     id: string;
     state: string;
@@ -344,16 +373,65 @@ export interface LearnerDetail extends LearnerSummary {
   }[];
 }
 
+// ── Analytics équipe (US-2a.5) ───────────────────────────────────────────────
+
+export interface TeamAggregate {
+  team_id: string;
+  member_count: number;
+  coverage_ratio: number;
+  freshness_ratio: number;
+  green_ratio: number;
+  orange_ratio: number;
+  red_ratio: number;
+  alert_zone: "green" | "amber" | "red";
+  computed_at: string;
+}
+
+// ── Analytics équipe — progression par module (US-2a.5) ──────────────────────
+
+export interface TeamModuleProgress {
+  module_id: string;
+  avg_completion_percent: number;
+  member_count: number;
+  completed_count: number;
+}
+
+// ── Audit — bundle export (R-4.3) ────────────────────────────────────────────
+
+export interface AuditBundleExport {
+  learner_id: string;
+  exported_at: string;
+  exported_by: string;
+  bundle_hash: string;
+  proofs: {
+    stamp_id: string;
+    competence_code: string;
+    bundle: unknown | null;
+  }[];
+}
+
 // ── Admin — Users ─────────────────────────────────────────────────────────────
 
-export type PlatformRole = "super_admin" | "admin" | "trainer" | "manager" | "learner";
+// AppRole = categorie metier / espace UI par defaut (cf. SPEC.md §5).
+// L'autorisation est piloee par les PERMISSIONS, pas par ce champ.
+export type AppRole = "super_admin" | "admin" | "trainer" | "manager" | "learner";
+
+// Alias temporaire pour la transition frontend (a retirer phase 2).
+export type PlatformRole = AppRole;
+
 export type JobRole = "hr" | "developer" | "manager" | "finance";
+
+// Permission codes — re-exportes via packages/domain. Strings libres ici pour
+// eviter la dependance circulaire en cas d'import depuis le web.
+export type Permission = string;
 
 export interface UserDto {
   id: string;
   email: string;
   display_name: string;
-  platform_role: PlatformRole;
+  app_role: AppRole;
+  /** @deprecated alias temporaire vers app_role */
+  platform_role: AppRole;
   is_active: boolean;
   mfa_enabled: boolean;
   created_at: string;
@@ -364,15 +442,17 @@ export interface UserDto {
 export interface CreateUserDto {
   email: string;
   display_name: string;
-  platform_role: PlatformRole;
+  app_role: AppRole;
   password: string;
   job_role?: JobRole;
   team_id?: string;
+  /** Optionnel — codes des roles RBAC a attribuer. Si vide, role par defaut = role_<app_role> */
+  role_codes?: string[];
 }
 
 export interface UpdateUserDto {
   display_name?: string;
-  platform_role?: PlatformRole;
+  app_role?: AppRole;
   is_active?: boolean;
   job_role?: JobRole | null;
   team_id?: string | null;
@@ -410,4 +490,107 @@ export interface AppConfigEntry {
   key: string;
   value: unknown;
   updated_at: string;
+}
+
+// ── Admin — Permissions ───────────────────────────────────────────────────────
+
+export interface PermissionDto {
+  id: string;
+  code: string;
+  resource: string;
+  verb: string;
+}
+
+// ── Admin — Roles ─────────────────────────────────────────────────────────────
+
+export interface RoleDto {
+  id: string;
+  code: string;
+  label_fr: string;
+  label_en: string;
+  is_system: boolean;
+  created_at: string;
+}
+
+export interface RoleWithPermissionsDto extends RoleDto {
+  permission_codes: string[];
+}
+
+export interface CreateRoleDto {
+  code: string;
+  label_fr: string;
+  label_en: string;
+}
+
+export interface UserRoleDto {
+  user_id: string;
+  role_id: string;
+  granted_at: string;
+  granted_by: string | null;
+  role: RoleDto & { permission_codes: string[] };
+}
+
+// ── User permissions directes ─────────────────────────────────────────────────
+
+export interface UserPermissionDto {
+  id: string;
+  user_id: string;
+  permission_id: string;
+  type: "grant" | "deny";
+  granted_by: string | null;
+  granted_at: string;
+  permission: {
+    id: string;
+    code: string;
+    resource: string;
+    verb: string;
+  };
+}
+
+export interface UpsertUserPermissionDto {
+  type: "grant" | "deny";
+}
+
+// ── Assignment ────────────────────────────────────────────────────────────────
+
+export interface AssignmentDto {
+  id: string;
+  assignee_id: string;
+  assigner_id: string;
+  resource_type: "module" | "path";
+  resource_id: string;
+  due_date: string | null;
+  created_at: string;
+  assigner?: { id: string; display_name: string } | null;
+}
+
+export interface CreateAssignmentDto {
+  assignee_id: string;
+  resource_type: "module" | "path";
+  resource_id: string;
+  due_date?: string | null;
+}
+
+// ── Trash ─────────────────────────────────────────────────────────────────────
+
+export type TrashType = "module" | "learning_path" | "evaluation_item" | "competence";
+
+export interface TrashedItem {
+  id: string;
+  deleted_at: string;
+  _type: TrashType;
+  [key: string]: unknown;
+}
+
+export interface TrashListDto {
+  modules: TrashedItem[];
+  learning_paths: TrashedItem[];
+  evaluation_items: TrashedItem[];
+  competences: TrashedItem[];
+}
+
+export interface PurgeExpiredResult {
+  purged: number;
+  retention_days: number;
+  cutoff: string;
 }

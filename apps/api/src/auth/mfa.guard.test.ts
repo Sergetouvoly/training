@@ -25,7 +25,7 @@ const verifiedUser: AuthUser = {
   user_id: "u1",
   email: "test@holenek.fr",
   display_name: "Test",
-  platform_role: "learner",
+  app_role: "learner", permissions: [],
   mfa_verified: true,
 };
 
@@ -56,3 +56,4 @@ describe("MfaGuard", () => {
     expect(makeGuard({ isPublic: true }).canActivate(makeContext(unverifiedUser))).toBe(true);
   });
 });
+

@@ -1,9 +1,56 @@
 // Refs: SPEC.md §7 — configuration système, accès super_admin uniquement
 import { redirect } from "next/navigation";
-import { getApiClient, getPlatformRole } from "../../../../lib/api";
+import { getApiClient, getPermissions } from "../../../../lib/api";
+import { can } from "../../../../lib/permissions";
 import type { AppConfigEntry } from "@elearning/api-client";
 
-const CONFIG_LABELS: Record<string, { label: string; description: string; type: "text" | "number" | "select"; options?: string[] }> = {
+const CONFIG_LABELS: Record<string, { label: string; description: string; type: "text" | "number" | "select"; options?: string[]; requiresPermission?: string }> = {
+  smtp_host: {
+    label: "Serveur SMTP",
+    description: "Hôte du serveur SMTP (ex: smtp.gmail.com). Laisser vide pour désactiver les emails.",
+    type: "text",
+  },
+  smtp_port: {
+    label: "Port SMTP",
+    description: "Port SMTP (587 = TLS, 465 = SSL).",
+    type: "number",
+  },
+  smtp_user: {
+    label: "Utilisateur SMTP",
+    description: "Identifiant de connexion au serveur SMTP.",
+    type: "text",
+  },
+  smtp_pass: {
+    label: "Mot de passe SMTP",
+    description: "Mot de passe SMTP. Masquez-le après enregistrement.",
+    type: "text",
+  },
+  platform_url: {
+    label: "URL de la plateforme",
+    description: "URL de base utilisée dans les liens des emails (ex: https://lms.holenek.fr).",
+    type: "text",
+  },
+  cron_stamps_expiring_enabled: {
+    label: "Rappels expiration stamps (cron)",
+    description: "Active les rappels automatiques quotidiens pour les stamps expirant dans 30 jours.",
+    type: "select",
+    options: ["true", "false"],
+    requiresPermission: "scheduler.manage",
+  },
+  cron_overdue_assignments_enabled: {
+    label: "Rappels assignations en retard (cron)",
+    description: "Active les rappels automatiques quotidiens pour les formations en retard.",
+    type: "select",
+    options: ["true", "false"],
+    requiresPermission: "scheduler.manage",
+  },
+  cron_streak_reminder_enabled: {
+    label: "Rappels streak (cron)",
+    description: "Active les rappels quotidiens pour maintenir le streak d'apprentissage.",
+    type: "select",
+    options: ["true", "false"],
+    requiresPermission: "scheduler.manage",
+  },
   mastery_window: {
     label: "Fenêtre de maîtrise (jours)",
     description: "Nombre de jours avant qu'une compétence soit considérée comme maîtrisée.",
@@ -33,8 +80,9 @@ const CONFIG_LABELS: Record<string, { label: string; description: string; type: 
 };
 
 export default async function AdminConfigPage() {
-  const platformRole = await getPlatformRole();
-  if (platformRole !== "super_admin") redirect("/dashboard");
+  const permissions = await getPermissions();
+  if (!can(permissions, "view.admin_config")) redirect("/dashboard");
+  const canWriteConfig = can(permissions, "app_config.write");
 
   const api = await getApiClient();
   const entries: AppConfigEntry[] = await api.config.list().catch(() => []);
@@ -65,8 +113,9 @@ export default async function AdminConfigPage() {
         <p className="mt-1 text-sm text-ink-soft">Paramètres globaux de la plateforme — accès super_admin uniquement.</p>
       </div>
 
-      <form action={saveConfig} className="space-y-4">
+      <form action={canWriteConfig ? saveConfig : undefined} className="space-y-4">
         {Object.entries(CONFIG_LABELS).map(([key, meta]) => {
+          if (meta.requiresPermission && !can(permissions, meta.requiresPermission as any)) return null;
           const current = configMap[key];
           const currentValue = current ? String(current.value) : "";
           return (
@@ -88,6 +137,7 @@ export default async function AdminConfigPage() {
                   id={key}
                   name={key}
                   defaultValue={currentValue}
+                  disabled={!canWriteConfig}
                   className="w-full max-w-xs rounded-xl border border-surface-warm px-4 py-2.5 text-sm text-ink focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
                 >
                   {!currentValue && <option value="">— Non configuré —</option>}
@@ -103,6 +153,7 @@ export default async function AdminConfigPage() {
                   defaultValue={currentValue}
                   placeholder={meta.type === "number" ? "0" : ""}
                   min={meta.type === "number" ? 0 : undefined}
+                  disabled={!canWriteConfig}
                   className="w-full max-w-xs rounded-xl border border-surface-warm px-4 py-2.5 text-sm text-ink placeholder-ink-soft/60 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
                 />
               )}
@@ -113,6 +164,7 @@ export default async function AdminConfigPage() {
         <div className="flex justify-end pt-2">
           <button
             type="submit"
+            disabled={!canWriteConfig}
             className="rounded-xl bg-primary px-6 py-2.5 text-sm font-semibold text-white hover:bg-primary-deep transition-colors shadow-sm"
           >
             Enregistrer les paramètres
@@ -122,3 +174,5 @@ export default async function AdminConfigPage() {
     </div>
   );
 }
+
+

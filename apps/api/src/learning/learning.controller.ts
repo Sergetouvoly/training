@@ -1,7 +1,7 @@
 import { Controller, Get, Post, Patch, Delete, Param, Body, HttpCode, HttpStatus } from "@nestjs/common";
 import { CurrentUser } from "../auth/current-user.decorator.js";
-import { Roles } from "../auth/roles.decorator.js";
-import { LearningService, type CreateLearningPathDto, type CreateModuleDto, type UpdateModuleContentDto, type UpdateLearningPathDto } from "./learning.service.js";
+import { RequirePermissions } from "../auth/permissions.decorator.js";
+import { LearningService, type CreateLearningPathDto, type CreateModuleDto, type UpdateModuleContentDto, type UpdateLearningPathDto, type UpdateModuleQuizConfigDto } from "./learning.service.js";
 import { ProgressionService, type SaveProgressDto } from "./progression.service.js";
 import type { AuthUser } from "../auth/auth.types.js";
 
@@ -17,7 +17,7 @@ export class LearningController {
   // ─── LearningPath ──────────────────────────────────────
 
   @Post("paths")
-  @Roles("admin", "super_admin")
+  @RequirePermissions("learning_path.create")
   async createPath(@Body() dto: CreateLearningPathDto) {
     return this.learningService.createPath(dto);
   }
@@ -33,13 +33,13 @@ export class LearningController {
   }
 
   @Patch("paths/:id")
-  @Roles("admin", "super_admin")
+  @RequirePermissions("learning_path.update")
   async updatePath(@Param("id") id: string, @Body() dto: UpdateLearningPathDto) {
     return this.learningService.updatePath(id, dto);
   }
 
   @Delete("paths/:id")
-  @Roles("admin", "super_admin")
+  @RequirePermissions("learning_path.delete")
   async deletePath(@Param("id") id: string) {
     return this.learningService.deletePath(id);
   }
@@ -47,7 +47,7 @@ export class LearningController {
   // ─── Module ────────────────────────────────────────────
 
   @Post("modules")
-  @Roles("admin", "trainer", "super_admin")
+  @RequirePermissions("module.create")
   async createModule(@Body() dto: CreateModuleDto) {
     return this.learningService.createModule(dto);
   }
@@ -63,26 +63,35 @@ export class LearningController {
   }
 
   @Delete("modules/:id")
-  @Roles("admin", "super_admin")
+  @RequirePermissions("module.delete")
   async deleteModule(@Param("id") id: string) {
     return this.learningService.deleteModule(id);
   }
 
   // Refs: SPEC-CONTENT.md §7.5 — draft → published + version_hash + ModulePublished
   @Post("modules/:id/publish")
-  @Roles("admin", "trainer", "super_admin")
+  @RequirePermissions("module.publish")
   @HttpCode(HttpStatus.OK)
   async publishModule(@Param("id") id: string, @CurrentUser() user: AuthUser) {
     return this.learningService.publishModule(id, user.user_id);
   }
 
   @Patch("modules/:id/content")
-  @Roles("admin", "trainer", "super_admin")
+  @RequirePermissions("module.update")
   async updateModuleContent(
     @Param("id") id: string,
     @Body() dto: UpdateModuleContentDto,
   ) {
     return this.learningService.updateModuleContent(id, dto);
+  }
+
+  @Patch("modules/:id/quiz-config")
+  @RequirePermissions("module.update")
+  async updateQuizConfig(
+    @Param("id") id: string,
+    @Body() dto: UpdateModuleQuizConfigDto,
+  ) {
+    return this.learningService.updateQuizConfig(id, dto);
   }
 
   // ─── Progression ───────────────────────────────────────
@@ -100,3 +109,5 @@ export class LearningController {
     return this.progressionService.getProgressSummary(learnerId);
   }
 }
+
+

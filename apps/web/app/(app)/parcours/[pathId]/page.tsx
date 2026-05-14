@@ -1,6 +1,7 @@
 // Refs: SPEC.md §8, US-1.2 progression visible sur parcours
-import { notFound } from "next/navigation";
-import { getApiClient, getUserId } from "../../../../lib/api";
+import { notFound, redirect } from "next/navigation";
+import { getApiClient, getPermissions, getUserId } from "../../../../lib/api";
+import { can } from "../../../../lib/permissions";
 
 export default async function PathDetailPage({
   params,
@@ -8,7 +9,8 @@ export default async function PathDetailPage({
   readonly params: Promise<{ pathId: string }>;
 }) {
   const { pathId } = await params;
-  const [api, learnerId] = await Promise.all([getApiClient(), getUserId()]);
+  const [api, learnerId, permissions] = await Promise.all([getApiClient(), getUserId(), getPermissions()]);
+  if (!can(permissions, "view.learner_parcours")) redirect("/dashboard");
 
   const [path, modules, progress] = await Promise.all([
     api.learning.getPath(pathId).catch(() => null),

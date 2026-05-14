@@ -8,7 +8,10 @@ export type NotificationType =
   | "streak_reminder"
   | "stamp_expiring"
   | "buddy_request"
-  | "challenge_result";
+  | "challenge_result"
+  | "assignment_due_reminder"
+  | "module_assigned"
+  | "stamp_state_changed";
 
 export interface PushNotificationDto {
   readonly learner_id: string;

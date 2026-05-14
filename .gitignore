@@ -34,3 +34,16 @@ uploads/
 
 # prisma
 *.db-journal
+
+# coverage / test artifacts
+coverage/
+test-results/
+playwright-report/
+*.lcov
+
+# Claude Code
+.claude/
+
+# notes locales / brouillons (exclus du repo)
+dev_idea.txt
+*.draft.md

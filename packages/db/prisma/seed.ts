@@ -2,6 +2,8 @@
 // Usage : pnpm --filter @elearning/db db:seed
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { PERMISSIONS, splitPermission, SYSTEM_ROLE_CODES } from "@elearning/domain";
+import { ROLE_PERMISSIONS, SYSTEM_ROLES } from "../src/rbac-seed.js";
 
 const prisma = new PrismaClient();
 
@@ -46,71 +48,116 @@ const MODULE1_CONTENT = {
 
 async function main() {
   // ── Users (identite + role plateforme) ───────────────────
-  await prisma.user.upsert({
+  const superAdmin = await prisma.user.upsert({
     where: { email: "super@holenek.fr" },
-    update: {},
+    update: { password_hash: HASH("SuperAdmin1!"), app_role: "super_admin" },
     create: {
       email: "super@holenek.fr",
       password_hash: HASH("SuperAdmin1!"),
       display_name: "Super Admin",
-      platform_role: "super_admin",
+      app_role: "super_admin",
     },
   });
 
   const admin = await prisma.user.upsert({
     where: { email: "admin@holenek.fr" },
-    update: {},
+    update: { password_hash: HASH("Admin1234!"), app_role: "admin" },
     create: {
       email: "admin@holenek.fr",
       password_hash: HASH("Admin1234!"),
       display_name: "Admin Holenek",
-      platform_role: "admin",
+      app_role: "admin",
     },
   });
 
   const trainer = await prisma.user.upsert({
     where: { email: "formateur@holenek.fr" },
-    update: {},
+    update: { password_hash: HASH("Trainer1234!"), app_role: "trainer" },
     create: {
       email: "formateur@holenek.fr",
       password_hash: HASH("Trainer1234!"),
       display_name: "Sophie Leblanc",
-      platform_role: "trainer",
+      app_role: "trainer",
     },
   });
 
   const manager = await prisma.user.upsert({
     where: { email: "manager@holenek.fr" },
-    update: {},
+    update: { password_hash: HASH("Manager1234!"), app_role: "manager" },
     create: {
       email: "manager@holenek.fr",
       password_hash: HASH("Manager1234!"),
       display_name: "Thomas Renard",
-      platform_role: "manager",
+      app_role: "manager",
     },
   });
 
   const alice = await prisma.user.upsert({
     where: { email: "alice@holenek.fr" },
-    update: {},
+    update: { password_hash: HASH("Learner1234!"), app_role: "learner" },
     create: {
       email: "alice@holenek.fr",
       password_hash: HASH("Learner1234!"),
       display_name: "Alice Martin",
-      platform_role: "learner",
+      app_role: "learner",
     },
   });
 
   const bob = await prisma.user.upsert({
     where: { email: "bob@holenek.fr" },
-    update: {},
+    update: { password_hash: HASH("Learner1234!"), app_role: "learner" },
     create: {
       email: "bob@holenek.fr",
       password_hash: HASH("Learner1234!"),
       display_name: "Bob Dupont",
-      platform_role: "learner",
+      app_role: "learner",
     },
   });
+
+  const roleByCode = new Map<string, { id: string; code: string }>();
+  for (const role of SYSTEM_ROLES) {
+    const upserted = await prisma.role.upsert({
+      where: { code: role.code },
+      update: { label_fr: role.label_fr, label_en: role.label_en, is_system: true },
+      create: { code: role.code, label_fr: role.label_fr, label_en: role.label_en, is_system: true },
+    });
+    roleByCode.set(role.code, upserted);
+  }
+
+  const permissionByCode = new Map<string, { id: string; code: string }>();
+  for (const code of PERMISSIONS) {
+    const { resource, verb } = splitPermission(code);
+    const permission = await prisma.permission.upsert({
+      where: { code },
+      update: { resource, verb },
+      create: { code, resource, verb, label_fr: code },
+    });
+    permissionByCode.set(code, permission);
+  }
+
+  for (const role of SYSTEM_ROLES) {
+    const dbRole = roleByCode.get(role.code)!;
+    const allowed = ROLE_PERMISSIONS[role.appRole];
+    for (const permissionCode of allowed) {
+      const permission = permissionByCode.get(permissionCode)!;
+      await prisma.rolePermission.upsert({
+        where: { role_id_permission_id: { role_id: dbRole.id, permission_id: permission.id } },
+        update: {},
+        create: { role_id: dbRole.id, permission_id: permission.id },
+      });
+    }
+  }
+
+  const seededUsers = [superAdmin, admin, trainer, manager, alice, bob];
+  for (const user of seededUsers) {
+    const roleCode = SYSTEM_ROLE_CODES[user.app_role as keyof typeof SYSTEM_ROLE_CODES];
+    const role = roleByCode.get(roleCode)!;
+    await prisma.userRole.upsert({
+      where: { user_id_role_id: { user_id: user.id, role_id: role.id } },
+      update: {},
+      create: { user_id: user.id, role_id: role.id, granted_by: "system" },
+    });
+  }
 
   // ── Learner profiles (1-to-1 avec User) ─────────────────
   // super_admin n'a pas de profil learner
@@ -359,6 +406,18 @@ async function main() {
     create: { key: "mastery_window", value: 3 },
   });
 
+  await prisma.appConfig.upsert({
+    where: { key: "jwt_ttl_minutes" },
+    update: {},
+    create: { key: "jwt_ttl_minutes", value: 15 },
+  });
+
+  await prisma.appConfig.upsert({
+    where: { key: "trash_retention_days" },
+    update: {},
+    create: { key: "trash_retention_days", value: 30 },
+  });
+
   console.log(`✓ 6 users (super_admin, admin, trainer, manager, alice, bob)`);
   console.log(`✓ 5 learner profiles (admin, trainer, manager, alice, bob)`);
   console.log(`✓ 3 competences`);
@@ -366,9 +425,11 @@ async function main() {
   console.log(`✓ 2 parcours`);
   console.log(`✓ 3 evaluation items`);
   console.log(`✓ 2 stamps + 1 streak pour alice`);
-  console.log(`✓ 2 app_config entries`);
+  console.log(`✓ 4 app_config entries (stamp_validity_months, mastery_window, jwt_ttl_minutes, trash_retention_days)`);
 }
 
-main()
-  .catch((e) => { console.error(e); process.exit(1); })
-  .finally(() => prisma.$disconnect());
+if (process.argv[1]?.replace(/\\/g, "/").endsWith("/prisma/seed.ts")) {
+  main()
+    .catch((e) => { console.error(e); process.exit(1); })
+    .finally(() => prisma.$disconnect());
+}

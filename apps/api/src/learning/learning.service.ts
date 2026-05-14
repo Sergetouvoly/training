@@ -32,6 +32,14 @@ export type UpdateLearningPathDto = Partial<{
   is_mandatory: boolean;
 }>;
 
+export interface UpdateModuleQuizConfigDto {
+  readonly quiz_bank_id?: string | null;
+  readonly passing_score?: number;
+  readonly max_attempts?: number;
+  readonly cooldown_minutes?: number;
+  readonly show_explanations?: boolean;
+}
+
 @Injectable()
 export class LearningService {
   constructor(private readonly prisma: PrismaService) {}
@@ -50,13 +58,13 @@ export class LearningService {
   }
 
   async findPathById(id: string) {
-    const path = await this.prisma.learningPath.findFirst({ where: { id } });
+    const path = await this.prisma.learningPath.findFirst({ where: { id, deleted_at: null } });
     if (!path) throw new NotFoundException(`LearningPath ${id} not found`);
     return path;
   }
 
   async listPaths() {
-    return this.prisma.learningPath.findMany({ orderBy: { created_at: "desc" } });
+    return this.prisma.learningPath.findMany({ where: { deleted_at: null }, orderBy: { created_at: "desc" } });
   }
 
   async updatePath(id: string, dto: UpdateLearningPathDto) {
@@ -74,7 +82,7 @@ export class LearningService {
 
   async deletePath(id: string) {
     await this.findPathById(id);
-    return this.prisma.learningPath.delete({ where: { id } });
+    return this.prisma.learningPath.update({ where: { id }, data: { deleted_at: new Date() } });
   }
 
   // ─── Module ────────────────────────────────────────────
@@ -82,7 +90,7 @@ export class LearningService {
   async createModule(dto: CreateModuleDto) {
     const id = randomUUID();
     const version = dto.version ?? "1.0.0";
-    const version_hash = dto.version_hash ?? id.replace(/-/g, "").slice(0, 32);
+    const version_hash = dto.version_hash ?? id.replaceAll("-", "").slice(0, 32);
     return this.prisma.module.create({
       data: {
         version,
@@ -101,13 +109,13 @@ export class LearningService {
   }
 
   async findModuleById(id: string) {
-    const mod = await this.prisma.module.findFirst({ where: { id } });
+    const mod = await this.prisma.module.findFirst({ where: { id, deleted_at: null } });
     if (!mod) throw new NotFoundException(`Module ${id} not found`);
     return mod;
   }
 
   async listModules() {
-    return this.prisma.module.findMany({ orderBy: { created_at: "desc" } });
+    return this.prisma.module.findMany({ where: { deleted_at: null }, orderBy: { created_at: "desc" } });
   }
 
   async updateModuleContent(id: string, dto: UpdateModuleContentDto) {
@@ -120,7 +128,7 @@ export class LearningService {
 
   async deleteModule(id: string) {
     await this.findModuleById(id);
-    return this.prisma.module.delete({ where: { id } });
+    return this.prisma.module.update({ where: { id }, data: { deleted_at: new Date() } });
   }
 
   // Refs: SPEC-CONTENT.md §7.5, SPEC §8 — draft → published
@@ -137,7 +145,7 @@ export class LearningService {
 
     const payload: ModulePublishedPayload = {
       module_id: id,
-      version: mod.version as string,
+      version: mod.version,
       version_hash,
       published_by: publishedBy,
     };
@@ -159,5 +167,28 @@ export class LearningService {
     ]);
 
     return updated;
+  }
+
+  async updateQuizConfig(id: string, dto: UpdateModuleQuizConfigDto) {
+    const mod = await this.findModuleById(id);
+
+    // Fusionne quiz_config dans content_fr sans écraser le reste du contenu
+    const contentFr = (mod.content_fr ?? {}) as Record<string, unknown>;
+    const existingQuizConfig = (contentFr["quiz_config"] ?? {}) as Record<string, unknown>;
+    const updatedQuizConfig = {
+      ...existingQuizConfig,
+      ...(dto.passing_score !== undefined && { passing_score: dto.passing_score }),
+      ...(dto.max_attempts !== undefined && { max_attempts: dto.max_attempts }),
+      ...(dto.cooldown_minutes !== undefined && { cooldown_minutes: dto.cooldown_minutes }),
+      ...(dto.show_explanations !== undefined && { show_explanations: dto.show_explanations }),
+    };
+
+    return this.prisma.module.update({
+      where: { id },
+      data: {
+        ...(dto.quiz_bank_id !== undefined && { quiz_bank_id: dto.quiz_bank_id }),
+        content_fr: { ...contentFr, quiz_config: updatedQuizConfig },
+      },
+    });
   }
 }

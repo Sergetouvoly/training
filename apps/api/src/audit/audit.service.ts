@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
+import { createHash, randomUUID } from "node:crypto";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { createProofBundle, type AuditProofBundle } from "@elearning/crypto";
 
@@ -66,5 +67,53 @@ export class AuditService {
 
     const proof = await this.getProofByStampId(stampId);
     return { stamp, proof };
+  }
+
+  // Refs: R-4.3 — dossier preuve learner : tous les stamps + leurs bundles, SHA-256 global
+  async exportLearnerAuditBundle(learnerId: string, exportedBy: string) {
+    const stamps = await this.prisma.stamp.findMany({
+      where: { learner_id: learnerId },
+      include: { competence: { select: { code: true } } },
+    });
+
+    const allBundleEvents = await this.prisma.domainEvent.findMany({
+      where: { event_name: "AuditBundleCreated" },
+      orderBy: { occurred_at: "desc" },
+    });
+
+    const proofs = stamps.map((stamp) => {
+      const bundle = allBundleEvents.find((e) => (e.payload as any)?.payload?.stamp_id === stamp.id);
+      return {
+        stamp_id: stamp.id,
+        competence_code: stamp.competence.code,
+        bundle: bundle?.payload ?? null,
+      };
+    });
+
+    const exportPayload = {
+      learner_id: learnerId,
+      exported_at: new Date().toISOString(),
+      exported_by: exportedBy,
+      proofs,
+    };
+
+    const bundle_hash = createHash("sha256").update(JSON.stringify(exportPayload)).digest("hex");
+
+    await this.prisma.domainEvent.create({
+      data: {
+        id: randomUUID(),
+        event_name: "AuditBundleExported",
+        event_version: "1",
+        produced_by: exportedBy,
+        payload: {
+          learner_id: learnerId,
+          bundle_hash,
+          exported_by: exportedBy,
+          exported_at: exportPayload.exported_at,
+        } as object,
+      },
+    });
+
+    return { ...exportPayload, bundle_hash };
   }
 }

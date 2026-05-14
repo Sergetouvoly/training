@@ -7,7 +7,7 @@ import { LearningModule } from "./learning.module.js";
 import { PrismaModule } from "../prisma/prisma.module.js";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { MfaGuard } from "../auth/mfa.guard.js";
-import { RolesGuard } from "../auth/roles.guard.js";
+import { PermissionsGuard } from "../auth/permissions.guard.js";
 import type { AuthUser } from "../auth/auth.types.js";
 
 // Refs: SPEC.md §9 US-1.2, US-1.5, R-1.3
@@ -79,7 +79,7 @@ async function createApp(user: AuthUser | undefined, prismaMock?: any) {
     imports: [PrismaModule, LearningModule],
     providers: [
       { provide: APP_GUARD, useClass: MfaGuard },
-      { provide: APP_GUARD, useClass: RolesGuard },
+      { provide: APP_GUARD, useClass: PermissionsGuard },
     ],
   })
     .overrideProvider(PrismaService)
@@ -107,8 +107,8 @@ async function req(app: INestApplication, method: string, path: string, body?: a
   }
 }
 
-const admin: AuthUser = { user_id: "u1", email: "admin@holenek.fr", display_name: "Admin", platform_role: "admin", mfa_verified: true };
-const learner: AuthUser = { user_id: "u2", email: "l@holenek.fr", display_name: "Learner", platform_role: "learner", mfa_verified: true };
+const admin: AuthUser = { user_id: "u1", email: "admin@holenek.fr", display_name: "Admin", app_role: "admin", permissions: ["user.read", "learning_path.create", "module.create", "evaluation_item.create"], mfa_verified: true };
+const learner: AuthUser = { user_id: "u2", email: "l@holenek.fr", display_name: "Learner", app_role: "learner", permissions: [], mfa_verified: true };
 
 describe("Learning integration", () => {
   it("admin creates a learning path (US-1.5)", async () => {
@@ -176,3 +176,4 @@ describe("Learning integration", () => {
     await app.close();
   });
 });
+

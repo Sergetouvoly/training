@@ -15,7 +15,7 @@ const mockUser = {
   id: "u1",
   email: "alice@holenek.fr",
   display_name: "Alice",
-  platform_role: "learner",
+  app_role: "learner",
   created_at: new Date("2026-01-01"),
   learner: { id: "l1", job_role: "hr", team_id: null },
 };
@@ -70,3 +70,4 @@ describe("GdprService", () => {
     await expect(service.exportLearnerData("unknown")).rejects.toThrow(NotFoundException);
   });
 });
+

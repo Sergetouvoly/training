@@ -1,7 +1,7 @@
 import { Controller, Post, Get, Body, Param, Query, NotFoundException } from "@nestjs/common";
 import { CurrentUser } from "../auth/current-user.decorator.js";
 import type { AuthUser } from "../auth/auth.types.js";
-import { Roles } from "../auth/roles.decorator.js";
+import { RequirePermissions } from "../auth/permissions.decorator.js";
 import { SimulatorService, type StartSessionDto, type ChoiceDto } from "./simulator.service.js";
 import { PassportService } from "./passport.service.js";
 import { PassportExportService } from "./passport-export.service.js";
@@ -69,7 +69,7 @@ export class SimulatorController {
   }
 
   @Post("mastery/:competenceId/check-expire")
-  @Roles("admin")
+  @RequirePermissions("mastery.check_expire")
   async checkExpire(
     @Param("competenceId") competenceId: string,
     @Body("learner_id") learnerId: string,
@@ -81,15 +81,21 @@ export class SimulatorController {
   // ─── Team Analytics (US-2a.5) ──────────────────────────
 
   @Get("analytics/team")
-  @Roles("admin", "manager")
+  @RequirePermissions("analytics.team_read")
   async getTeamAnalytics(@Query("team_id") teamId: string) {
     return this.teamAnalyticsService.getTeamAggregates(teamId);
+  }
+
+  @Get("analytics/team/modules")
+  @RequirePermissions("analytics.team_read")
+  async getTeamModuleProgress(@Query("team_id") teamId: string) {
+    return this.teamAnalyticsService.getTeamModuleProgress(teamId);
   }
 
   // ─── Vidéo interactive (US-2a.2) ───────────────────────
 
   @Post("scenarios/video-node")
-  @Roles("admin", "manager")
+  @RequirePermissions("scenario.create_video_node")
   async createVideoNode(@Body() dto: CreateVideoNodeDto) {
     return this.videoScenarioService.createVideoNode(dto);
   }
@@ -103,3 +109,5 @@ export class SimulatorController {
     return this.debriefService.generateDebrief(learnerId);
   }
 }
+
+

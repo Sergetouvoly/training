@@ -2,16 +2,9 @@
 import { redirect } from "next/navigation";
 import { fr } from "@elearning/i18n";
 import { auth } from "../../../auth";
-import { getApiClient, getUserId } from "../../../lib/api";
-
-// Rôles non-apprenants : on les renvoie vers leur espace dédié qui a déjà
-// un dashboard complet. /dashboard est réservé aux learners.
-const ROLE_REDIRECT: Record<string, string> = {
-  super_admin: "/admin",
-  admin: "/admin",
-  trainer: "/trainer",
-  manager: "/manager",
-};
+import { getApiClient, getPermissions, getUserId } from "../../../lib/api";
+import { can } from "../../../lib/permissions";
+import { OnboardingWizard } from "./OnboardingWizard";
 
 function CircularProgress({ value, size = 64 }: { readonly value: number; readonly size?: number }) {
   const r = (size - 8) / 2;
@@ -53,23 +46,44 @@ const ROLE_LABELS: Record<string, string> = {
 
 export default async function DashboardPage() {
   const t = fr;
-  const [api, session, learnerId] = await Promise.all([getApiClient(), auth(), getUserId()]);
+  const [api, session, learnerId, permissions] = await Promise.all([getApiClient(), auth(), getUserId(), getPermissions()]);
 
   const platformRole = (session as any)?.platformRole as string ?? "learner";
 
-  const roleRedirect = ROLE_REDIRECT[platformRole];
-  if (roleRedirect) redirect(roleRedirect);
+  if (!can(permissions, "view.learner_dashboard")) redirect("/login");
 
   const displayName = (session as any)?.displayName as string ?? session?.user?.email?.split("@")[0] ?? "Utilisateur";
   const initial = displayName.charAt(0).toUpperCase() || "U";
 
-  const [paths, passport, progress] = await Promise.all([
+  const [paths, passport, progress, assignments, onboarding] = await Promise.all([
     api.learning.listPaths().catch(() => [] as Awaited<ReturnType<typeof api.learning.listPaths>>),
     api.passport.get().catch(() => null),
     learnerId
       ? api.learning.getProgress(learnerId).catch(() => ({} as Record<string, number>))
       : Promise.resolve({} as Record<string, number>),
+    learnerId
+      ? api.assignment.listForAssignee(learnerId).catch(() => [] as Awaited<ReturnType<typeof api.assignment.listForAssignee>>)
+      : Promise.resolve([] as Awaited<ReturnType<typeof api.assignment.listForAssignee>>),
+    platformRole === "learner"
+      ? api.user.checkOnboarding().catch(() => ({ completed: true }))
+      : Promise.resolve({ completed: true }),
   ]);
+
+  const now = new Date();
+  const overdueAssignments = assignments.filter((a) => {
+    if (!a.due_date) return false;
+    if (new Date(a.due_date) >= now) return false;
+    if (a.resource_type === "path") {
+      const path = paths.find((p) => p.id === a.resource_id);
+      if (!path) return false;
+      const moduleProgresses = path.module_sequence.map((id) => progress[id] ?? 0);
+      const pathPct = moduleProgresses.length > 0
+        ? Math.round(moduleProgresses.reduce((acc, v) => acc + v, 0) / moduleProgresses.length)
+        : 0;
+      return pathPct < 100;
+    }
+    return (progress[a.resource_id] ?? 0) < 100;
+  });
 
   const stamps = passport?.stamps ?? [];
   const streak = passport?.streak;
@@ -82,8 +96,16 @@ export default async function DashboardPage() {
     ? Math.round(progressValues.reduce((a, b) => a + b, 0) / progressValues.length)
     : 0;
 
+  const showOnboarding =
+    platformRole === "learner" &&
+    !onboarding.completed &&
+    stamps.length === 0 &&
+    Object.keys(progress).length === 0;
+
   return (
     <section aria-labelledby="dashboard-title">
+      {showOnboarding && <OnboardingWizard paths={paths} />}
+
       <h1 id="dashboard-title" className="mb-6 text-2xl font-bold text-primary-deep">
         {t.dashboard.title}
       </h1>
@@ -115,6 +137,38 @@ export default async function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* ── Formations en retard ─────────────────────────── */}
+      {overdueAssignments.length > 0 && (
+        <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-6 py-4">
+          <div className="flex items-center gap-2 mb-3">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-red-600" aria-hidden="true">
+              <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+            <h2 className="text-sm font-bold text-red-700">
+              {overdueAssignments.length} formation{overdueAssignments.length > 1 ? "s" : ""} en retard
+            </h2>
+          </div>
+          <ul className="flex flex-wrap gap-2">
+            {overdueAssignments.map((a) => {
+              const path = a.resource_type === "path" ? paths.find((p) => p.id === a.resource_id) : null;
+              const label = path?.title_fr ?? a.resource_id.slice(0, 20);
+              return (
+                <li key={a.id}>
+                  <a
+                    href="/parcours"
+                    className="inline-flex items-center gap-1.5 rounded-full bg-red-100 px-3 py-1 text-xs font-medium text-red-700 hover:bg-red-200 transition-colors"
+                  >
+                    {label}
+                    <span className="text-red-500">·</span>
+                    {new Date(a.due_date!).toLocaleDateString("fr-FR")}
+                  </a>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
 
       {/* ── Grille 3 colonnes ────────────────────────────── */}
       <div className="grid gap-5 lg:grid-cols-3">

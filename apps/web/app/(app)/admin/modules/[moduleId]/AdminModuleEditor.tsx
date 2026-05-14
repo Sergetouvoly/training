@@ -13,7 +13,8 @@ import { TextStyle } from "@tiptap/extension-text-style";
 import Highlight from "@tiptap/extension-highlight";
 import FontFamily from "@tiptap/extension-font-family";
 import { Table, TableRow, TableCell, TableHeader } from "@tiptap/extension-table";
-import type { Module, ModuleContent, Lesson, Block, VideoBlock } from "@elearning/api-client";
+import type { Module, ModuleContent, ModuleQuizConfig, Lesson, Block, VideoBlock, ShapeBlock } from "@elearning/api-client";
+import { ShapeBlockEditor } from "./ShapeBlockEditor";
 
 // ── Conversion TipTap JSON → blocs Holenek ───────────────────────────────────
 // TipTap produit son propre format JSON. On stocke directement ce JSON dans
@@ -143,25 +144,27 @@ const FONT_FAMILIES = [
   { label: "Arial", value: "Arial, sans-serif" },
 ];
 
+// Palette couleurs texte — tokens Holenek officiels
 const TEXT_COLORS = [
-  { label: "Noir", value: "#0f172a" },
-  { label: "Gris", value: "#64748b" },
-  { label: "Rouge", value: "#dc2626" },
-  { label: "Orange", value: "#ea580c" },
-  { label: "Jaune", value: "#ca8a04" },
-  { label: "Vert", value: "#16a34a" },
-  { label: "Bleu", value: "#2563eb" },
-  { label: "Violet", value: "#7c3aed" },
-  { label: "Rose", value: "#db2777" },
+  { label: "Texte principal",  value: "#3a3a3a" },  // ink
+  { label: "Texte doux",       value: "#595959" },  // ink-soft
+  { label: "Teal Holenek",     value: "#1a6c7a" },  // primary
+  { label: "Navy Holenek",     value: "#153243" },  // primary-deep
+  { label: "Navy profond",     value: "#000f2b" },  // primary-darkest
+  { label: "Bleu-gris",        value: "#87A8B9" },  // muted
+  { label: "Alerte rouge",     value: "#dc2626" },
+  { label: "Succès vert",      value: "#16a34a" },
+  { label: "Warning ambre",    value: "#d97706" },
 ];
 
+// Palette surlignage — fonds clairs issus des tokens Holenek
 const HIGHLIGHT_COLORS = [
-  { label: "Jaune", value: "#fef08a" },
-  { label: "Vert", value: "#bbf7d0" },
-  { label: "Bleu", value: "#bfdbfe" },
-  { label: "Rose", value: "#fbcfe8" },
-  { label: "Orange", value: "#fed7aa" },
-  { label: "Violet", value: "#e9d5ff" },
+  { label: "Teal clair",       value: "#f3f9fb" },  // accent-soft
+  { label: "Periwinkle",       value: "#BFD1FF" },  // accent-bright
+  { label: "Ambre clair",      value: "#fef3c7" },
+  { label: "Vert clair",       value: "#dcfce7" },
+  { label: "Rouge clair",      value: "#fee2e2" },
+  { label: "Gris doux",        value: "#f1f5f9" },
 ];
 
 function ToolbarBtn({
@@ -220,7 +223,7 @@ function ColorPicker({
               title={c.label}
               onMouseDown={(e) => { e.preventDefault(); onSelect(c.value); setOpen(false); }}
               className="w-6 h-6 rounded-full border-2 transition-transform hover:scale-110"
-              style={{ background: c.value, borderColor: current === c.value ? "#6366f1" : "transparent" }}
+              style={{ background: c.value, borderColor: current === c.value ? "#1a6c7a" : "transparent" }}
             />
           ))}
           <button
@@ -508,7 +511,7 @@ function UploadButton({
 
 // ── Blocs spéciaux (non-éditables via TipTap) ────────────────────────────────
 
-type SpecialBlockType = "callout" | "audio" | "video" | "video_embed" | "file" | "scenario" | "key_takeaway" | "mini_quiz";
+type SpecialBlockType = "callout" | "audio" | "video" | "video_embed" | "file" | "scenario" | "key_takeaway" | "mini_quiz" | "shape";
 
 function SpecialBlockAdder({ onAdd, onAddText }: {
   readonly onAdd: (b: Block) => void;
@@ -518,6 +521,7 @@ function SpecialBlockAdder({ onAdd, onAddText }: {
   const [open, setOpen] = useState(false);
 
   const types: { type: SpecialBlockType; label: string; icon: string }[] = [
+    { type: "shape",        label: "Forme (carré, rond, triangle…)",       icon: "🔷" },
     { type: "callout",      label: "Encadré (info / warning / danger)",   icon: "💡" },
     { type: "audio",        label: "Audio (upload ou URL)",               icon: "🎵" },
     { type: "video",        label: "Vidéo (upload local)",                icon: "🎬" },
@@ -531,6 +535,7 @@ function SpecialBlockAdder({ onAdd, onAddText }: {
   function createBlock(type: SpecialBlockType): Block {
     const id = Math.random().toString(36).slice(2, 9);
     switch (type) {
+      case "shape":        return { id, type, shape: "circle", fill_color: "#1a6c7a", width: 120, height: 120, align: "center" } satisfies ShapeBlock;
       case "callout":      return { id, type, variant: "info", title: "", content: [{ type: "text", text: "Votre message ici." }] };
       case "audio":        return { id, type, url: "", title: "Audio", duration_seconds: 0 };
       case "video":        return { id, type: "video" as const, url: "", title: "Vidéo" };
@@ -606,6 +611,12 @@ function SpecialBlockEditor({ block, onChange, onDelete, onDuplicate, moduleId }
 
   function renderFields() {
     switch (block.type) {
+      case "shape": return (
+        <ShapeBlockEditor
+          block={block as ShapeBlock}
+          onChange={(b) => onChange(b)}
+        />
+      );
       case "callout": return (
         <div className="space-y-3">
           <div>
@@ -727,7 +738,7 @@ function SpecialBlockEditor({ block, onChange, onDelete, onDuplicate, moduleId }
   }
 
   const typeLabels: Record<string, string> = {
-    callout: "💡 Encadré", audio: "🎵 Audio", video: "🎬 Vidéo",
+    shape: "🔷 Forme", callout: "💡 Encadré", audio: "🎵 Audio", video: "🎬 Vidéo",
     video_embed: "▶️ Vidéo embed", file: "📎 Fichier",
     scenario: "📋 Scénario", key_takeaway: "⭐ Points clés", mini_quiz: "❓ Mini-quiz",
   };
@@ -746,7 +757,7 @@ function SpecialBlockEditor({ block, onChange, onDelete, onDuplicate, moduleId }
 // Un "segment" est soit un éditeur TipTap (blocs texte consécutifs) soit un bloc spécial isolé.
 // Cela permet d'intercaler du texte avant et après chaque bloc spécial.
 
-const SPECIAL_TYPES = new Set(["callout","audio","video","video_embed","file","scenario","key_takeaway","mini_quiz"]);
+const SPECIAL_TYPES = new Set(["shape","callout","audio","video","video_embed","file","scenario","key_takeaway","mini_quiz"]);
 
 type Segment =
   | { kind: "text";    segId: string; blocks: Block[] }
@@ -1001,10 +1012,12 @@ const UNLOCK_MODE_OPTIONS = [
 ];
 
 function ModuleSettingsDrawer({
-  moduleId, content, onChange,
+  moduleId, content, quizBankId, onQuizBankIdChange, onChange,
 }: {
   readonly moduleId: string;
   readonly content: ModuleContent;
+  readonly quizBankId: string;
+  readonly onQuizBankIdChange: (v: string) => void;
   readonly onChange: (next: ModuleContent) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -1021,6 +1034,17 @@ function ModuleSettingsDrawer({
   }, [open]);
 
   const unlockMode = content.lesson_unlock_mode ?? "free";
+  const quizCfg = content.quiz_config ?? {
+    passing_score: 70,
+    max_attempts: 0,
+    cooldown_minutes: 0,
+    randomize_questions: false,
+    show_explanations: true,
+  };
+
+  function setQuizCfg(patch: Partial<ModuleQuizConfig>) {
+    onChange({ ...content, quiz_config: { ...quizCfg, ...patch } });
+  }
 
   return (
     <>
@@ -1156,6 +1180,124 @@ function ModuleSettingsDrawer({
                     value={content.audio_summary_url ?? ""}
                     onChange={(url) => onChange({ ...content, audio_summary_url: url || undefined })}
                   />
+                </div>
+              </section>
+
+              {/* ── Section Quiz & Évaluation ── */}
+              <section className="space-y-5">
+                <div>
+                  <h3 className="text-[11px] font-bold uppercase tracking-widest text-ink-soft">Quiz &amp; Évaluation</h3>
+                  <div className="mt-1 h-px w-full bg-surface-warm" />
+                </div>
+
+                {/* Banque de questions */}
+                <div>
+                  <label htmlFor="settings-bank-id" className="block text-sm font-semibold text-ink mb-1">
+                    Banque de questions
+                  </label>
+                  <p className="text-xs text-ink-soft mb-2.5">
+                    Identifiant de la banque utilisée pour tirer les questions du quiz final.
+                    Créez les questions dans <a href={`/admin/assessment?bank=${moduleId}`} className="text-primary underline underline-offset-2">la banque d'évaluation</a>.
+                  </p>
+                  <input
+                    id="settings-bank-id"
+                    type="text"
+                    value={quizBankId}
+                    onChange={(e) => onQuizBankIdChange(e.target.value)}
+                    placeholder={moduleId}
+                    className="w-full rounded-lg border border-surface-warm px-3 py-2 text-sm text-ink font-mono focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  />
+                  <p className="mt-1.5 text-[11px] text-ink-soft">
+                    Laisser vide pour désactiver le quiz sur ce module.
+                  </p>
+                </div>
+
+                {/* Score de passage */}
+                <div>
+                  <label htmlFor="settings-passing-score" className="block text-sm font-semibold text-ink mb-1">
+                    Score de passage
+                  </label>
+                  <p className="text-xs text-ink-soft mb-2.5">Note minimale (sur 100) pour valider la compétence.</p>
+                  <div className="flex items-center gap-2.5">
+                    <input
+                      id="settings-passing-score"
+                      type="number" min={0} max={100}
+                      value={quizCfg.passing_score}
+                      onChange={(e) => setQuizCfg({ passing_score: Math.min(100, Math.max(0, Number(e.target.value))) })}
+                      className="w-24 rounded-lg border border-surface-warm px-3 py-2 text-sm text-ink focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                    />
+                    <span className="text-sm text-ink-soft">/ 100</span>
+                    <span className="ml-1 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary">{quizCfg.passing_score}%</span>
+                  </div>
+                </div>
+
+                {/* Tentatives max */}
+                <div>
+                  <label htmlFor="settings-max-attempts" className="block text-sm font-semibold text-ink mb-1">
+                    Tentatives maximum
+                  </label>
+                  <p className="text-xs text-ink-soft mb-2.5">0 = illimité. Après ce nombre de tentatives, l'apprenant doit attendre le délai de recul.</p>
+                  <div className="flex items-center gap-2.5">
+                    <input
+                      id="settings-max-attempts"
+                      type="number" min={0} max={20}
+                      value={quizCfg.max_attempts}
+                      onChange={(e) => setQuizCfg({ max_attempts: Math.max(0, Number(e.target.value)) })}
+                      className="w-24 rounded-lg border border-surface-warm px-3 py-2 text-sm text-ink focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                    />
+                    <span className="text-sm text-ink-soft">{quizCfg.max_attempts === 0 ? "(illimité)" : `tentative${quizCfg.max_attempts > 1 ? "s" : ""}`}</span>
+                  </div>
+                </div>
+
+                {/* Délai entre tentatives */}
+                <div>
+                  <label htmlFor="settings-cooldown" className="block text-sm font-semibold text-ink mb-1">
+                    Délai entre tentatives
+                  </label>
+                  <p className="text-xs text-ink-soft mb-2.5">0 = pas de délai. Temps d'attente obligatoire entre deux passages du quiz.</p>
+                  <div className="flex items-center gap-2.5">
+                    <input
+                      id="settings-cooldown"
+                      type="number" min={0} max={10080}
+                      value={quizCfg.cooldown_minutes}
+                      onChange={(e) => setQuizCfg({ cooldown_minutes: Math.max(0, Number(e.target.value)) })}
+                      className="w-24 rounded-lg border border-surface-warm px-3 py-2 text-sm text-ink focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                    />
+                    <span className="text-sm text-ink-soft">minutes</span>
+                    {quizCfg.cooldown_minutes >= 60 && (
+                      <span className="text-xs text-ink-soft">({Math.round(quizCfg.cooldown_minutes / 60 * 10) / 10}h)</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Options booléennes */}
+                <div className="space-y-3">
+                  {([
+                    { key: "randomize_questions" as const, label: "Ordre aléatoire des questions", desc: "Mélange les questions à chaque tentative." },
+                    { key: "show_explanations" as const, label: "Afficher les explications", desc: "Montre la justification après chaque réponse." },
+                  ] as const).map(({ key, label, desc }) => {
+                    const checked = quizCfg[key];
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        role="switch"
+                        aria-checked={checked}
+                        onClick={() => setQuizCfg({ [key]: !checked })}
+                        className={`flex w-full items-start gap-3 rounded-xl border p-4 text-left transition-all ${
+                          checked ? "border-primary bg-primary/5 ring-2 ring-primary/20" : "border-surface-warm bg-white hover:border-primary/40"
+                        }`}
+                      >
+                        <span className={`mt-0.5 flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${checked ? "bg-primary" : "bg-surface-warm"}`}>
+                          <span className={`ml-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${checked ? "translate-x-4" : "translate-x-0"}`} />
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className={`text-sm font-semibold ${checked ? "text-primary-deep" : "text-ink"}`}>{label}</p>
+                          <p className="mt-0.5 text-xs text-ink-soft leading-relaxed">{desc}</p>
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
               </section>
 
@@ -1328,6 +1470,7 @@ export function AdminModuleEditor({ module }: { readonly module: Module }) {
   };
 
   const [content, setContent] = useState<ModuleContent>(initial);
+  const [quizBankId, setQuizBankId] = useState<string>(module.quiz_bank_id ?? "");
   const [activeLessonId, setActiveLessonId] = useState<string>(initial.lessons[0]?.id ?? "");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -1476,12 +1619,25 @@ export function AdminModuleEditor({ module }: { readonly module: Module }) {
     setSaved(false);
     setSaveError(false);
     try {
-      const res = await fetch(`/api/learning/modules/${module.id}/content`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content_fr: content }),
-      });
-      if (!res.ok) throw new Error();
+      const [contentRes, quizRes] = await Promise.all([
+        fetch(`/api/learning/modules/${module.id}/content`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content_fr: content }),
+        }),
+        fetch(`/api/learning/modules/${module.id}/quiz-config`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            quiz_bank_id: quizBankId.trim() || null,
+            passing_score: content.quiz_config?.passing_score ?? 70,
+            max_attempts: content.quiz_config?.max_attempts ?? 0,
+            cooldown_minutes: content.quiz_config?.cooldown_minutes ?? 0,
+            show_explanations: content.quiz_config?.show_explanations ?? true,
+          }),
+        }),
+      ]);
+      if (!contentRes.ok || !quizRes.ok) throw new Error();
       setSaved(true);
     } catch {
       setSaveError(true);
@@ -1627,6 +1783,8 @@ export function AdminModuleEditor({ module }: { readonly module: Module }) {
             <ModuleSettingsDrawer
               moduleId={module.id}
               content={content}
+              quizBankId={quizBankId}
+              onQuizBankIdChange={(v) => { setQuizBankId(v); setSaved(false); }}
               onChange={(next) => { setContent(next); setSaved(false); }}
             />
             <a href={`/preview/module/${module.id}`} target="_blank" rel="noopener noreferrer"

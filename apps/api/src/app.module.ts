@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { ScheduleModule } from "@nestjs/schedule";
 import { AuthModule } from "./auth/auth.module.js";
 import { PrismaModule } from "./prisma/prisma.module.js";
 import { LearningModule } from "./learning/learning.module.js";
@@ -11,9 +12,14 @@ import { SimulatorModule } from "./simulator/simulator.module.js";
 import { SocialModule } from "./social/social.module.js";
 import { AiModule } from "./ai/ai.module.js";
 import { MediaModule } from "./media/media.module.js";
+import { RoleModule } from "./role/role.module.js";
+import { TrashModule } from "./trash/trash.module.js";
+import { AssignmentModule } from "./assignment/assignment.module.js";
+import { SchedulerModule } from "./scheduler/scheduler.module.js";
 
 @Module({
   imports: [
+    ScheduleModule.forRoot(),
     PrismaModule,
     AuthModule,
     LearningModule,
@@ -26,6 +32,10 @@ import { MediaModule } from "./media/media.module.js";
     SocialModule,
     AiModule,
     MediaModule,
+    RoleModule,
+    TrashModule,
+    AssignmentModule,
+    SchedulerModule,
   ],
 })
 export class AppModule {}

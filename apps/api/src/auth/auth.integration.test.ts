@@ -4,10 +4,10 @@ import { Test } from "@nestjs/testing";
 import { Controller, Get, type INestApplication } from "@nestjs/common";
 import { APP_GUARD } from "@nestjs/core";
 import { MfaGuard } from "./mfa.guard.js";
-import { RolesGuard } from "./roles.guard.js";
-import { Roles } from "./roles.decorator.js";
+import { PermissionsGuard } from "./permissions.guard.js";
+import { RequirePermissions } from "./permissions.decorator.js";
 import { Public } from "./public.decorator.js";
-import type { AuthUser, PlatformRole } from "./auth.types.js";
+import type { AuthUser, AppRole } from "./auth.types.js";
 
 // Refs: SPEC.md §4, §11 US-1.1 — chaine de guards sans TenantGuard
 
@@ -17,15 +17,15 @@ class TestController {
   getProtected() { return { ok: true }; }
 
   @Get("admin-only")
-  @Roles("admin")
+  @RequirePermissions("user.read")
   getAdminOnly() { return { admin: true }; }
 
   @Get("super-admin-only")
-  @Roles("super_admin")
+  @RequirePermissions("user.disable_mfa_other")
   getSuperAdminOnly() { return { super: true }; }
 
   @Get("trainer-or-admin")
-  @Roles("trainer", "admin")
+  @RequirePermissions("module.create")
   getTrainerOrAdmin() { return { content: true }; }
 
   @Public()
@@ -33,8 +33,15 @@ class TestController {
   getPublic() { return { public: true }; }
 }
 
-function makeUser(platform_role: PlatformRole, mfa_verified = true): AuthUser {
-  return { user_id: "u1", email: "test@holenek.fr", display_name: "Test", platform_role, mfa_verified };
+function makeUser(app_role: AppRole, mfa_verified = true): AuthUser {
+  const permissions = {
+    super_admin: ["user.read", "user.disable_mfa_other", "module.create"],
+    admin: ["user.read", "module.create"],
+    trainer: ["module.create"],
+    manager: [],
+    learner: [],
+  }[app_role];
+  return { user_id: "u1", email: "test@holenek.fr", display_name: "Test", app_role, permissions: permissions as any, mfa_verified };
 }
 
 async function createApp(user: AuthUser | undefined): Promise<INestApplication> {
@@ -42,7 +49,7 @@ async function createApp(user: AuthUser | undefined): Promise<INestApplication> 
     controllers: [TestController],
     providers: [
       { provide: APP_GUARD, useClass: MfaGuard },
-      { provide: APP_GUARD, useClass: RolesGuard },
+      { provide: APP_GUARD, useClass: PermissionsGuard },
     ],
   }).compile();
 
@@ -144,3 +151,4 @@ describe("Auth integration — guard chain", () => {
     await app.close();
   });
 });
+

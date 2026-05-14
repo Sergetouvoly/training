@@ -1,7 +1,7 @@
 import { Controller, Post, Get, Body, Param, Query } from "@nestjs/common";
 import { CurrentUser } from "../auth/current-user.decorator.js";
 import type { AuthUser } from "../auth/auth.types.js";
-import { Roles } from "../auth/roles.decorator.js";
+import { RequirePermissions } from "../auth/permissions.decorator.js";
 import { LitfService, type SubmitAnswerDto } from "./litf.service.js";
 import { BuddyService, type RequestBuddyDto } from "./buddy.service.js";
 import { ChallengeService, type CreateChallengeDto } from "./challenge.service.js";
@@ -45,13 +45,13 @@ export class SocialController {
 
   // ─── Challenge (US-2b.4) ───────────────────────────────
   @Post("challenges")
-  @Roles("admin", "manager")
+  @RequirePermissions("challenge.create")
   async createChallenge(@Body() dto: CreateChallengeDto) {
     return this.challengeService.createChallenge(dto);
   }
 
   @Post("challenges/:challengeId/close")
-  @Roles("admin", "manager")
+  @RequirePermissions("challenge.close")
   async closeChallenge(@Param("challengeId") challengeId: string) {
     return this.challengeService.closeChallenge(challengeId);
   }
@@ -72,3 +72,5 @@ export class SocialController {
     return this.notificationService.markRead(user.user_id);
   }
 }
+
+

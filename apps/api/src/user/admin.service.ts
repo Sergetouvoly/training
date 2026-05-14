@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ConflictException, ForbiddenException } from "@nestjs/common";
+import { Injectable, NotFoundException, ConflictException, ForbiddenException, BadRequestException, UnauthorizedException } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { PrismaService } from "../prisma/prisma.service.js";
@@ -8,7 +8,9 @@ import { PrismaService } from "../prisma/prisma.service.js";
 export interface CreateUserDto {
   readonly email: string;
   readonly display_name: string;
-  readonly platform_role: string;
+  readonly app_role?: string;
+  /** @deprecated bridge for existing web forms */
+  readonly platform_role?: string;
   readonly password: string;
   readonly job_role?: string;
   readonly team_id?: string;
@@ -22,6 +24,8 @@ export interface ListUsersQuery {
 
 export interface UpdateUserDto {
   readonly display_name?: string;
+  readonly app_role?: string;
+  /** @deprecated bridge for existing web forms */
   readonly platform_role?: string;
   readonly is_active?: boolean;
   readonly job_role?: string;
@@ -36,7 +40,7 @@ export class AdminService {
     const where: any = {};
 
     if (query.role) {
-      where.platform_role = query.role;
+      where.app_role = query.role;
     }
     if (query.status === "active") {
       where.is_active = true;
@@ -72,6 +76,7 @@ export class AdminService {
     if (existing) throw new ConflictException(`Email ${dto.email} already in use`);
 
     const password_hash = await bcrypt.hash(dto.password, 10);
+    const appRole = dto.app_role ?? "learner";
 
     const user = await this.prisma.$transaction(async (tx) => {
       const created = await tx.user.create({
@@ -79,7 +84,7 @@ export class AdminService {
           id: randomUUID(),
           email: dto.email,
           display_name: dto.display_name,
-          platform_role: dto.platform_role as any,
+          app_role: appRole as any,
           password_hash,
         },
         include: { learner: true },
@@ -104,12 +109,13 @@ export class AdminService {
 
   async updateUser(id: string, dto: UpdateUserDto) {
     const existing = await this.findOrThrow(id);
+    const nextAppRole = dto.app_role;
     if (
-      dto.platform_role !== undefined &&
-      dto.platform_role !== "super_admin" &&
-      existing.platform_role === "super_admin"
+      nextAppRole !== undefined &&
+      nextAppRole !== "super_admin" &&
+      existing.app_role === "super_admin"
     ) {
-      const remaining = await this.prisma.user.findMany({ where: { platform_role: "super_admin" } });
+      const remaining = await this.prisma.user.findMany({ where: { app_role: "super_admin" } });
       if (remaining.length <= 1) {
         throw new ForbiddenException("Cannot demote the last super_admin");
       }
@@ -119,7 +125,7 @@ export class AdminService {
       where: { id },
       data: {
         ...(dto.display_name !== undefined && { display_name: dto.display_name }),
-        ...(dto.platform_role !== undefined && { platform_role: dto.platform_role as any }),
+        ...(nextAppRole !== undefined && { app_role: nextAppRole as any }),
         ...(dto.is_active !== undefined && { is_active: dto.is_active }),
       },
       include: { learner: true },
@@ -149,8 +155,8 @@ export class AdminService {
     if (callerId && callerId === id) {
       throw new ForbiddenException("Cannot delete your own account");
     }
-    if (user.platform_role === "super_admin") {
-      const remaining = await this.prisma.user.findMany({ where: { platform_role: "super_admin" } });
+    if (user.app_role === "super_admin") {
+      const remaining = await this.prisma.user.findMany({ where: { app_role: "super_admin" } });
       if (remaining.length <= 1) {
         throw new ForbiddenException("Cannot delete the last super_admin");
       }
@@ -158,9 +164,11 @@ export class AdminService {
     return this.prisma.user.delete({ where: { id } });
   }
 
-  async listLearners() {
+  async listLearners(teamId?: string) {
+    const where: any = { learner: { isNot: null } };
+    if (teamId) where.learner = { team_id: teamId };
     const users = await this.prisma.user.findMany({
-      where: { learner: { isNot: null } },
+      where,
       orderBy: { created_at: "desc" },
       include: { learner: { include: { stamps: true } } },
     });
@@ -202,6 +210,31 @@ export class AdminService {
     return toLearnerDetail(learner, [...progressMap.values()]);
   }
 
+  async updateSelf(userId: string, dto: { display_name?: string; current_password?: string; new_password?: string }) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException(`User ${userId} not found`);
+
+    const data: Record<string, unknown> = {};
+
+    if (dto.display_name !== undefined) {
+      if (!dto.display_name.trim()) throw new BadRequestException("display_name cannot be empty");
+      data["display_name"] = dto.display_name.trim();
+    }
+
+    if (dto.new_password !== undefined) {
+      if (!dto.current_password) throw new BadRequestException("current_password is required to change password");
+      const valid = await bcrypt.compare(dto.current_password, user.password_hash);
+      if (!valid) throw new UnauthorizedException("Current password is incorrect");
+      if (dto.new_password.length < 8) throw new BadRequestException("new_password must be at least 8 characters");
+      data["password_hash"] = await bcrypt.hash(dto.new_password, 10);
+    }
+
+    if (Object.keys(data).length === 0) return toUserDto({ ...user, learner: null });
+
+    const updated = await this.prisma.user.update({ where: { id: userId }, data, include: { learner: true } });
+    return toUserDto(updated);
+  }
+
   private async findOrThrow(id: string) {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException(`User ${id} not found`);
@@ -214,7 +247,8 @@ function toUserDto(user: any) {
     id: user.id,
     email: user.email,
     display_name: user.display_name,
-    platform_role: user.platform_role,
+    app_role: user.app_role,
+    platform_role: user.app_role,
     is_active: user.is_active,
     mfa_enabled: user.mfa_enabled,
     created_at: user.created_at,
@@ -243,6 +277,7 @@ function toLearnerDetail(learner: any, progression: any[] = []) {
   const stamps: any[] = learner.stamps ?? [];
   return {
     id: learner.id,
+    user_id: learner.user_id,
     email: learner.user.email,
     display_name: learner.user.display_name,
     primary_role: learner.job_role,

@@ -1,119 +1,84 @@
-// Refs: docs/BACKLOG.md §2b — fige la matrice rôles × actions.
-// Si un test casse ici, c'est qu'on a élargi/restreint une permission :
-// vérifier la cohérence avec le @Roles(...) côté API avant de mettre à jour.
-import { describe, it, expect } from "vitest";
-import {
-  can, canAccessAdmin, canAccessTrainerSpace, canAccessManagerSpace,
-  type Action,
-} from "../lib/permissions";
+import { describe, expect, it } from "vitest";
+import { can, canAny, canAccessAdmin, canAccessTrainerSpace, canAccessManagerSpace } from "../lib/permissions";
 
-const ROLES = ["super_admin", "admin", "trainer", "manager", "learner"] as const;
+const PERMS_SUPER_ADMIN = [
+  "user.read", "user.create", "user.update", "user.delete", "user.reset_password", "user.disable_mfa_other",
+  "learner.read", "learner.read_detail",
+  "competence.read", "competence.create", "competence.update", "competence.delete",
+  "module.read", "module.create", "module.update", "module.delete", "module.publish", "module.upload_media",
+  "learning_path.read", "learning_path.create", "learning_path.update", "learning_path.delete",
+  "evaluation_item.read", "evaluation_item.create", "evaluation_item.update", "evaluation_item.delete", "evaluation_item.import_csv",
+  "stamp.read_any", "mastery.check_expire", "scenario.create_video_node",
+  "challenge.create", "challenge.close", "analytics.team_read",
+  "app_config.read", "app_config.write", "ai.index_document", "audit.read",
+  "role.read", "role.create", "role.update", "role.delete", "role.assign", "role.update_permissions",
+];
 
-describe("permissions.can()", () => {
-  it("fail-closed : rôle absent/inconnu refuse tout", () => {
+const PERMS_ADMIN = PERMS_SUPER_ADMIN.filter(
+  (p) => !["user.disable_mfa_other", "app_config.write", "role.create", "role.delete", "role.update_permissions"].includes(p),
+);
+
+const PERMS_TRAINER = [
+  "module.read", "module.create", "module.update", "module.publish", "module.upload_media",
+  "evaluation_item.read", "evaluation_item.create", "evaluation_item.update", "evaluation_item.delete", "evaluation_item.import_csv",
+  "learner.read", "learner.read_detail", "competence.read", "learning_path.read",
+];
+
+const PERMS_MANAGER = [
+  "learner.read", "learner.read_detail", "analytics.team_read",
+  "challenge.create", "challenge.close", "scenario.create_video_node",
+  "module.read", "learning_path.read", "competence.read",
+];
+
+const PERMS_LEARNER = ["module.read", "learning_path.read"];
+
+describe("can()", () => {
+  it("fail-closed sur permissions vides/absentes", () => {
     expect(can(undefined, "user.read")).toBe(false);
-    expect(can("", "module.read")).toBe(false);
-    expect(can("nope" as any, "config.write")).toBe(false);
+    expect(can([], "user.read")).toBe(false);
   });
 
-  it("super_admin a TOUTES les permissions", () => {
-    const allActions: Action[] = [
-      "user.read", "user.create", "user.update", "user.delete",
-      "user.reset_password", "user.disable_mfa",
-      "learner.read", "learner.read_detail",
-      "module.read", "module.create", "module.update", "module.delete", "module.publish",
-      "path.read", "path.create", "path.update", "path.delete",
-      "competence.read", "competence.write",
-      "assessment.read", "assessment.write",
-      "config.read", "config.write",
-      "audit.read",
-    ];
-    for (const a of allActions) {
-      expect(can("super_admin", a), `super_admin doit pouvoir ${a}`).toBe(true);
-    }
+  it("retourne true quand permission presente", () => {
+    expect(can(PERMS_ADMIN, "user.read")).toBe(true);
   });
 
-  it("learner ne peut que lire les ressources publiques", () => {
-    expect(can("learner", "module.read")).toBe(true);
-    expect(can("learner", "path.read")).toBe(true);
-    expect(can("learner", "user.read")).toBe(false);
-    expect(can("learner", "module.update")).toBe(false);
-    expect(can("learner", "config.read")).toBe(false);
-  });
-
-  it("trainer édite contenu mais pas users/paths/config", () => {
-    expect(can("trainer", "module.create")).toBe(true);
-    expect(can("trainer", "module.update")).toBe(true);
-    expect(can("trainer", "module.publish")).toBe(true);
-    expect(can("trainer", "module.delete")).toBe(false); // admin seul
-    expect(can("trainer", "assessment.write")).toBe(true);
-    expect(can("trainer", "path.update")).toBe(false);
-    expect(can("trainer", "user.update")).toBe(false);
-    expect(can("trainer", "competence.write")).toBe(false);
-    expect(can("trainer", "config.write")).toBe(false);
-  });
-
-  it("manager lit son équipe mais n'édite rien", () => {
-    expect(can("manager", "learner.read")).toBe(true);
-    expect(can("manager", "learner.read_detail")).toBe(true);
-    expect(can("manager", "module.update")).toBe(false);
-    expect(can("manager", "user.create")).toBe(false);
-    expect(can("manager", "path.update")).toBe(false);
-  });
-
-  it("seul super_admin peut désactiver le MFA d'autrui et écrire la config", () => {
-    expect(can("super_admin", "user.disable_mfa")).toBe(true);
-    expect(can("admin", "user.disable_mfa")).toBe(false);
-    expect(can("super_admin", "config.write")).toBe(true);
-    expect(can("admin", "config.write")).toBe(false);
+  it("retourne false quand permission absente", () => {
+    expect(can(PERMS_TRAINER, "user.delete")).toBe(false);
   });
 });
 
-describe("permissions.canAccessXxx() helpers", () => {
-  it("canAccessAdmin : super_admin, admin, trainer (assessment), manager (learner)", () => {
-    expect(canAccessAdmin("super_admin")).toBe(true);
-    expect(canAccessAdmin("admin")).toBe(true);
-    expect(canAccessAdmin("trainer")).toBe(true);
-    expect(canAccessAdmin("manager")).toBe(true);
-    expect(canAccessAdmin("learner")).toBe(false);
+describe("canAny()", () => {
+  it("retourne true si au moins une permission est presente", () => {
+    expect(canAny(PERMS_MANAGER, ["user.read", "analytics.team_read"])).toBe(true);
   });
 
-  it("canAccessTrainerSpace : super_admin, admin, trainer", () => {
-    expect(canAccessTrainerSpace("super_admin")).toBe(true);
-    expect(canAccessTrainerSpace("admin")).toBe(true);
-    expect(canAccessTrainerSpace("trainer")).toBe(true);
-    expect(canAccessTrainerSpace("manager")).toBe(false);
-    expect(canAccessTrainerSpace("learner")).toBe(false);
-  });
-
-  it("canAccessManagerSpace : super_admin, admin, manager", () => {
-    expect(canAccessManagerSpace("super_admin")).toBe(true);
-    expect(canAccessManagerSpace("admin")).toBe(true);
-    expect(canAccessManagerSpace("manager")).toBe(true);
-    expect(canAccessManagerSpace("trainer")).toBe(false);
-    expect(canAccessManagerSpace("learner")).toBe(false);
+  it("fail-closed sans correspondance", () => {
+    expect(canAny(PERMS_LEARNER, ["user.read", "app_config.read"])).toBe(false);
   });
 });
 
-describe("Snapshot complet de la matrice", () => {
-  // Si ce snapshot saute, c'est intentionnel ou c'est un drift à investiguer.
-  it("matche le snapshot connu", () => {
-    const matrix: Record<string, Record<string, boolean>> = {};
-    const allActions: Action[] = [
-      "user.read", "user.create", "user.update", "user.delete",
-      "user.reset_password", "user.disable_mfa",
-      "learner.read", "learner.read_detail",
-      "module.read", "module.create", "module.update", "module.delete", "module.publish",
-      "path.read", "path.create", "path.update", "path.delete",
-      "competence.read", "competence.write",
-      "assessment.read", "assessment.write",
-      "config.read", "config.write",
-      "audit.read",
-    ];
-    for (const role of ROLES) {
-      matrix[role] = {};
-      for (const a of allActions) matrix[role][a] = can(role, a);
-    }
-    expect(matrix).toMatchSnapshot();
+describe("canAccessAdmin/Trainer/Manager", () => {
+  it("admin spaces accessibles aux 4 roles non-learner", () => {
+    expect(canAccessAdmin(PERMS_SUPER_ADMIN)).toBe(true);
+    expect(canAccessAdmin(PERMS_ADMIN)).toBe(true);
+    expect(canAccessAdmin(PERMS_TRAINER)).toBe(true);
+    expect(canAccessAdmin(PERMS_MANAGER)).toBe(true);
+    expect(canAccessAdmin(PERMS_LEARNER)).toBe(false);
+  });
+
+  it("trainer space : super_admin, admin, trainer", () => {
+    expect(canAccessTrainerSpace(PERMS_SUPER_ADMIN)).toBe(true);
+    expect(canAccessTrainerSpace(PERMS_ADMIN)).toBe(true);
+    expect(canAccessTrainerSpace(PERMS_TRAINER)).toBe(true);
+    expect(canAccessTrainerSpace(PERMS_MANAGER)).toBe(false);
+    expect(canAccessTrainerSpace(PERMS_LEARNER)).toBe(false);
+  });
+
+  it("manager space : super_admin, admin, manager", () => {
+    expect(canAccessManagerSpace(PERMS_SUPER_ADMIN)).toBe(true);
+    expect(canAccessManagerSpace(PERMS_ADMIN)).toBe(true);
+    expect(canAccessManagerSpace(PERMS_MANAGER)).toBe(true);
+    expect(canAccessManagerSpace(PERMS_TRAINER)).toBe(false);
+    expect(canAccessManagerSpace(PERMS_LEARNER)).toBe(false);
   });
 });

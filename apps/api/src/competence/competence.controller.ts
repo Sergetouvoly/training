@@ -1,5 +1,5 @@
 import { Controller, Get, Post, Patch, Delete, Param, Body } from "@nestjs/common";
-import { Roles } from "../auth/roles.decorator.js";
+import { RequirePermissions } from "../auth/permissions.decorator.js";
 import { CompetenceService, type CreateCompetenceDto, type UpdateCompetenceDto } from "./competence.service.js";
 
 // Refs: SPEC.md §7
@@ -19,20 +19,22 @@ export class CompetenceController {
   }
 
   @Post()
-  @Roles("admin", "super_admin")
+  @RequirePermissions("competence.create")
   async create(@Body() dto: CreateCompetenceDto) {
     return this.competenceService.create(dto);
   }
 
   @Patch(":id")
-  @Roles("admin", "super_admin")
+  @RequirePermissions("competence.update")
   async update(@Param("id") id: string, @Body() dto: UpdateCompetenceDto) {
     return this.competenceService.update(id, dto);
   }
 
   @Delete(":id")
-  @Roles("admin", "super_admin")
+  @RequirePermissions("competence.delete")
   async remove(@Param("id") id: string) {
     return this.competenceService.remove(id);
   }
 }
+
+

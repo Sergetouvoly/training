@@ -1,6 +1,4 @@
 // Refs: SPEC.md §9 — helper server-side pour construire l'ApiClient avec le token de session
-import { cookies } from "next/headers";
-import { getToken } from "@auth/core/jwt";
 import {
   createApiClient,
   makeLearningApi,
@@ -11,27 +9,25 @@ import {
   makeCompetenceApi,
   makeConfigApi,
   makeNotificationApi,
+  makeRoleApi,
+  makeTrashApi,
+  makeUserPermissionApi,
+  makePermissionApi,
+  makeAssignmentApi,
+  makeSimulatorApi,
+  makeAuditApi,
 } from "@elearning/api-client";
+import { auth } from "../auth";
 
 const API_URL = process.env["API_URL"] ?? "http://localhost:3001";
 
-async function getJwt() {
-  const cookieStore = await cookies();
-  const cookieName = cookieStore.has("__Secure-authjs.session-token")
-    ? "__Secure-authjs.session-token"
-    : "authjs.session-token";
-  const rawCookie = cookieStore.get(cookieName)?.value ?? "";
-
-  return getToken({
-    req: new Request("http://n", { headers: { cookie: `${cookieName}=${rawCookie}` } }),
-    secret: process.env["AUTH_SECRET"] ?? "",
-    salt: cookieName,
-  });
+async function getSession() {
+  return auth();
 }
 
 export async function getApiClient() {
-  const jwt = await getJwt();
-  const token = (jwt as any)?.accessToken as string | undefined;
+  const session = await getSession();
+  const token = (session as any)?.accessToken as string | undefined;
 
   const client = createApiClient({
     baseUrl: API_URL,
@@ -47,20 +43,33 @@ export async function getApiClient() {
     competence: makeCompetenceApi(client),
     config: makeConfigApi(client),
     notification: makeNotificationApi(client),
+    role: makeRoleApi(client),
+    trash: makeTrashApi(client),
+    userPermission: makeUserPermissionApi(client),
+    permission: makePermissionApi(client),
+    assignment: makeAssignmentApi(client),
+    simulator: makeSimulatorApi(client),
+    audit: makeAuditApi(client),
   };
 }
 
 export async function getPlatformRole(): Promise<string> {
-  const jwt = await getJwt();
-  return (jwt as any)?.platformRole as string ?? "";
+  const session = await getSession();
+  return (session as any)?.platformRole as string ?? "";
+}
+
+export async function getPermissions(): Promise<string[]> {
+  const session = await getSession();
+  const perms = (session as any)?.permissions;
+  return Array.isArray(perms) ? perms : [];
 }
 
 export async function getDisplayName(): Promise<string> {
-  const jwt = await getJwt();
-  return (jwt as any)?.displayName as string ?? "";
+  const session = await getSession();
+  return (session as any)?.displayName as string ?? "";
 }
 
 export async function getUserId(): Promise<string | null> {
-  const jwt = await getJwt();
-  return (jwt as any)?.sub as string ?? null;
+  const session = await getSession();
+  return (session as any)?.userId as string ?? session?.user?.email ?? null;
 }

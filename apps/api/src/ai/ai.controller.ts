@@ -1,7 +1,7 @@
 // Refs: SPEC.md §9 US-3.1–US-3.4, R-3.1, R-3.2, R-3.3
 import { Controller, Post, Get, Body, Param, HttpCode, HttpStatus } from "@nestjs/common";
 import { CurrentUser } from "../auth/current-user.decorator.js";
-import { Roles } from "../auth/roles.decorator.js";
+import { RequirePermissions } from "../auth/permissions.decorator.js";
 import type { AuthUser } from "../auth/auth.types.js";
 import { AiNestService, type QueryAiDto, type IndexDocumentDto } from "./ai.service.js";
 
@@ -24,7 +24,7 @@ export class AiController {
 
   // Admin — index document chunk for RAG
   @Post("documents/index")
-  @Roles("admin")
+  @RequirePermissions("ai.index_document")
   @HttpCode(HttpStatus.NO_CONTENT)
   async indexDocument(@Body() dto: IndexDocumentDto) {
     await this.aiService.indexDocument(dto);
@@ -36,3 +36,5 @@ export class AiController {
     return { tokens_used_today: this.aiService.getTokensUsed(learnerId) };
   }
 }
+
+

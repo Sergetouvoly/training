@@ -1,10 +1,9 @@
 // Refs: SPEC-CONTENT.md §6.1 — liste parcours admin
 import { redirect } from "next/navigation";
-import { getApiClient, getPlatformRole } from "../../../../lib/api";
+import { getApiClient, getPermissions } from "../../../../lib/api";
+import { can } from "../../../../lib/permissions";
 import Link from "next/link";
 import { DeleteButton } from "../DeleteButton";
-
-const CONTENT_ROLES = new Set(["super_admin", "admin", "trainer"]);
 
 const ROLE_LABELS: Record<string, string> = {
   all: "Tous",
@@ -15,9 +14,9 @@ const ROLE_LABELS: Record<string, string> = {
 };
 
 export default async function AdminPathsPage() {
-  const platformRole = await getPlatformRole();
-  if (!CONTENT_ROLES.has(platformRole)) redirect("/dashboard");
-  const canDelete = platformRole === "admin" || platformRole === "super_admin";
+  const permissions = await getPermissions();
+  if (!can(permissions, "view.admin_paths")) redirect("/dashboard");
+  const canDelete = can(permissions, "learning_path.delete");
 
   const api = await getApiClient();
   const [paths, modules] = await Promise.all([
@@ -144,3 +143,5 @@ export default async function AdminPathsPage() {
     </div>
   );
 }
+
+

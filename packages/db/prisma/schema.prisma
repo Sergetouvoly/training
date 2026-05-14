@@ -7,9 +7,11 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Refs: SPEC.md §6 — mono-organisation Holenek, isolation par platform_role
+// Refs: SPEC.md §5, §6 — mono-organisation Holenek
+// RBAC dynamique : autorisation pilotee par tables roles/permissions/user_roles.
+// AppRole conserve a titre de CATEGORIE METIER uniquement (espace UI par defaut).
 
-enum PlatformRole {
+enum AppRole {
   super_admin
   admin
   trainer
@@ -18,24 +20,110 @@ enum PlatformRole {
 }
 
 // ─── User ────────────────────────────────────────────────
-// Identite + authentification + role plateforme
+// Identite + authentification + categorie metier (app_role)
+// Les permissions effectives sont calculees via UserRole → RolePermission + UserPermission (grants/denies directs)
 model User {
-  id            String       @id @default(uuid())
-  email         String       @unique
+  id            String    @id @default(uuid())
+  email         String    @unique
   password_hash String
   display_name  String
-  platform_role PlatformRole
-  is_active     Boolean      @default(true)
+  app_role      AppRole // categorie metier seulement (espace par defaut UI)
+  is_active     Boolean   @default(true)
   mfa_secret    String?
-  mfa_enabled   Boolean      @default(false)
-  last_login_at DateTime?
-  created_at    DateTime     @default(now())
-  updated_at    DateTime     @updatedAt
+  mfa_enabled   Boolean   @default(false)
+  last_login_at              DateTime?
+  onboarding_completed_at    DateTime? // null = onboarding non terminé
+  created_at                 DateTime  @default(now())
+  updated_at                 DateTime  @updatedAt
 
-  learner Learner? // profil metier 1-to-1, present si role != super_admin
+  learner              Learner?         // profil metier 1-to-1, present si role != super_admin
+  roles                UserRole[]
+  user_permissions     UserPermission[]
+  assignments_received Assignment[]     @relation("AssignmentAssignee")
+  assignments_given    Assignment[]     @relation("AssignmentAssigner")
 
-  @@index([platform_role])
+  @@index([app_role])
   @@map("users")
+}
+
+// ─── RBAC : Role / Permission / liaisons ─────────────────
+// Refs: SPEC.md §5 — RBAC dynamique. Permissions definies en code, mapping en BDD.
+model Role {
+  id         String   @id @default(uuid())
+  code       String   @unique // "role_super_admin", "role_admin", "role_trainer", ...
+  label_fr   String
+  label_en   String
+  is_system  Boolean  @default(false) // true = role systeme non supprimable
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  permissions RolePermission[]
+  users       UserRole[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id         String   @id @default(uuid())
+  code       String   @unique // "user.create", "module.publish", ...
+  resource   String // "user", "module", ... — utile pour grouper/filtrer
+  verb       String // "create", "read", "update", "delete", "publish", ...
+  label_fr   String?
+  created_at DateTime @default(now())
+
+  roles            RolePermission[]
+  user_permissions UserPermission[]
+
+  @@index([resource])
+  @@map("permissions")
+}
+
+// ─── UserPermission ───────────────────────────────────
+// Permissions directes sur un utilisateur (indépendantes des rôles).
+// type "grant" : ajoute la permission même si le rôle ne l'a pas.
+// type "deny"  : retire la permission même si le rôle l'a.
+// Priorité : deny > grant > rôle.
+model UserPermission {
+  id            String   @id @default(uuid())
+  user_id       String
+  permission_id String
+  type          String   // "grant" | "deny"
+  granted_by    String?  // user_id de l'acteur (audit)
+  granted_at    DateTime @default(now())
+
+  user       User       @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permission_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, permission_id])
+  @@index([user_id])
+  @@map("user_permissions")
+}
+
+model RolePermission {
+  role_id       String
+  permission_id String
+  granted_at    DateTime @default(now())
+
+  role       Role       @relation(fields: [role_id], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permission_id], references: [id], onDelete: Cascade)
+
+  @@id([role_id, permission_id])
+  @@index([permission_id])
+  @@map("role_permissions")
+}
+
+model UserRole {
+  user_id    String
+  role_id    String
+  granted_at DateTime @default(now())
+  granted_by String? // user_id de l'octroyant (audit)
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [role_id], references: [id], onDelete: Cascade)
+
+  @@id([user_id, role_id])
+  @@index([role_id])
+  @@map("user_roles")
 }
 
 // ─── Learner ─────────────────────────────────────────────
@@ -61,14 +149,16 @@ model Learner {
 
 // ─── Competence ──────────────────────────────────────────
 model Competence {
-  id         String   @id @default(uuid())
-  code       String   @unique
+  id         String    @id @default(uuid())
+  code       String    @unique
   label_fr   String
   label_en   String
-  created_at DateTime @default(now())
+  created_at DateTime  @default(now())
+  deleted_at DateTime? // soft-delete — null = actif
 
   stamps Stamp[]
 
+  @@index([deleted_at])
   @@map("competences")
 }
 
@@ -99,32 +189,37 @@ model Stamp {
 // ─── Module ──────────────────────────────────────────────
 // Refs: SPEC-CONTENT.md — content_fr est du JSON TipTap structure
 model Module {
-  id                         String   @id @default(uuid())
+  id                         String    @id @default(uuid())
   version                    String
-  version_hash               String   // SHA-256(JSON.stringify(content_fr)), recalcule a publication
+  version_hash               String    // SHA-256(JSON.stringify(content_fr)), recalcule a publication
   title_fr                   String
-  status                     String   @default("draft") // "draft" | "published"
-  competence_ids             String[] // IDs de competences ciblees
-  content_fr                 Json?    // ModuleContent (lessons, blocks — SPEC-CONTENT.md §2)
+  status                     String    @default("draft") // "draft" | "published"
+  competence_ids             String[]  // IDs de competences ciblees
+  content_fr                 Json?     // ModuleContent (lessons, blocks — SPEC-CONTENT.md §2)
+  quiz_bank_id               String?   // bank_id des items EvaluationItem pour le quiz final
   estimated_duration_minutes Int?
-  created_at                 DateTime @default(now())
-  updated_at                 DateTime @updatedAt
+  created_at                 DateTime  @default(now())
+  updated_at                 DateTime  @updatedAt
+  deleted_at                 DateTime? // soft-delete — null = actif
 
   @@index([status])
+  @@index([deleted_at])
   @@map("modules")
 }
 
 // ─── LearningPath ────────────────────────────────────────
 model LearningPath {
-  id              String   @id @default(uuid())
+  id              String    @id @default(uuid())
   title_fr        String
-  target_role     String   // "hr" | "developer" | "manager" | "finance" | "all"
-  module_sequence String[] // IDs de modules ordonnes
-  is_mandatory    Boolean  @default(false)
-  created_at      DateTime @default(now())
-  updated_at      DateTime @updatedAt
+  target_role     String    // "hr" | "developer" | "manager" | "finance" | "all"
+  module_sequence String[]  // IDs de modules ordonnes
+  is_mandatory    Boolean   @default(false)
+  created_at      DateTime  @default(now())
+  updated_at      DateTime  @updatedAt
+  deleted_at      DateTime? // soft-delete — null = actif
 
   @@index([target_role])
+  @@index([deleted_at])
   @@map("learning_paths")
 }
 
@@ -132,18 +227,20 @@ model LearningPath {
 // TBD-1.1 RESOLVED — Phase 1 : qcm_single, qcm_multi, true_false
 // content : { question_fr, question_en?, choices?, correct_answer? }
 model EvaluationItem {
-  id           String   @id @default(uuid())
+  id           String    @id @default(uuid())
   bank_id      String
-  format       String   // "qcm_single" | "qcm_multi" | "true_false" | "open" | "video_branched"
-  difficulty   Int      // 1-5
-  bloom_level  Int      // 1-6
+  format       String    // "qcm_single" | "qcm_multi" | "true_false" | "open" | "video_branched"
+  difficulty   Int       // 1-5
+  bloom_level  Int       // 1-6
   concept_tags String[]
-  content      Json?    // ItemContent
-  created_at   DateTime @default(now())
+  content      Json?     // ItemContent
+  created_at   DateTime  @default(now())
+  deleted_at   DateTime? // soft-delete — null = actif
 
   @@index([bank_id])
   @@index([format])
   @@index([difficulty])
+  @@index([deleted_at])
   @@map("evaluation_items")
 }
 
@@ -271,6 +368,30 @@ model DocumentEmbedding {
 
   @@index([document_id])
   @@map("document_embeddings")
+}
+
+// ─── Assignment ──────────────────────────────────────────
+// Refs: SPEC.md §7 — assignation module/parcours par admin/trainer/manager
+// scope: manager = equipe seulement (sauf assignment.read_cross_team)
+model Assignment {
+  id            String    @id @default(uuid())
+  assignee_id   String    // user_id de l'apprenant cible
+  assigner_id   String    // user_id de celui qui assigne
+  resource_type String    // "module" | "path"
+  resource_id   String    // id du Module ou LearningPath
+  due_date      DateTime? // echeance optionnelle
+  created_at    DateTime  @default(now())
+  deleted_at    DateTime? // soft-delete = retrait assignation
+
+  assignee User @relation("AssignmentAssignee", fields: [assignee_id], references: [id], onDelete: Cascade)
+  assigner User @relation("AssignmentAssigner", fields: [assigner_id], references: [id], onDelete: Cascade)
+
+  @@unique([assignee_id, resource_type, resource_id]) // un seul assignement actif par apprenant+ressource
+  @@index([assignee_id])
+  @@index([assigner_id])
+  @@index([resource_type, resource_id])
+  @@index([deleted_at])
+  @@map("assignments")
 }
 
 // ─── DomainEvent ─────────────────────────────────────────

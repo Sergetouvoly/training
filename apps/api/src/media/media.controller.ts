@@ -5,7 +5,7 @@ import {
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { memoryStorage } from "multer";
-import { Roles } from "../auth/roles.decorator.js";
+import { RequirePermissions } from "../auth/permissions.decorator.js";
 import { MediaService } from "./media.service.js";
 
 @Controller("media")
@@ -13,7 +13,7 @@ export class MediaController {
   constructor(private readonly mediaService: MediaService) {}
 
   @Post("upload/:moduleId")
-  @Roles("admin", "trainer", "super_admin")
+  @RequirePermissions("module.upload_media")
   @UseInterceptors(
     FileInterceptor("file", {
       storage: memoryStorage(),
@@ -28,3 +28,5 @@ export class MediaController {
     return this.mediaService.upload(moduleId, file);
   }
 }
+
+

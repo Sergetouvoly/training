@@ -1,18 +1,20 @@
 import {
   Controller,
   Get,
-  Post,
   Param,
   Res,
+  ForbiddenException,
+  NotFoundException,
 } from "@nestjs/common";
 import type { Response } from "express";
 import { AuditService } from "./audit.service.js";
 import { CertificateService } from "./certificate.service.js";
+import { RequirePermissions } from "../auth/permissions.decorator.js";
+import { CurrentUser } from "../auth/current-user.decorator.js";
+import type { AuthUser } from "../auth/auth.types.js";
 
-/**
- * Audit controller — proof bundles + PDF certificates.
- * Refs: SPEC.md R-1.5, R-4.3, C-1.4, WORKFLOW.md §6 BLOC 6
- */
+// Refs: SPEC.md R-1.5, R-4.3
+
 @Controller("audit")
 export class AuditController {
   constructor(
@@ -21,16 +23,25 @@ export class AuditController {
   ) {}
 
   @Get("stamps/:stampId/proof")
-  async getProof(@Param("stampId") stampId: string) {
-    return this.auditService.getStampWithProof(stampId);
+  @RequirePermissions("certificate.download")
+  async getProof(
+    @Param("stampId") stampId: string,
+    @CurrentUser() caller: AuthUser,
+  ) {
+    const data = await this.auditService.getStampWithProof(stampId);
+    this.assertOwnerOrAdmin(data.stamp, caller);
+    return data;
   }
 
   @Get("stamps/:stampId/certificate")
+  @RequirePermissions("certificate.download")
   async downloadCertificate(
     @Param("stampId") stampId: string,
     @Res() res: Response,
+    @CurrentUser() caller: AuthUser,
   ) {
     const { stamp, proof } = await this.auditService.getStampWithProof(stampId);
+    this.assertOwnerOrAdmin(stamp, caller);
     if (!proof) {
       res.status(404).json({ message: "No proof bundle found for this stamp" });
       return;
@@ -52,5 +63,20 @@ export class AuditController {
       "Content-Length": pdf.length.toString(),
     });
     res.end(pdf);
+  }
+
+  @Get("learners/:learnerId/export")
+  @RequirePermissions("audit.export")
+  async exportLearnerBundle(
+    @Param("learnerId") learnerId: string,
+    @CurrentUser() caller: AuthUser,
+  ) {
+    return this.auditService.exportLearnerAuditBundle(learnerId, caller.user_id);
+  }
+
+  private assertOwnerOrAdmin(stamp: any, caller: AuthUser): void {
+    if (caller.permissions.includes("audit.export")) return;
+    if (stamp.learner?.user_id === caller.user_id) return;
+    throw new ForbiddenException("Access denied to this certificate");
   }
 }

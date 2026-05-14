@@ -1,13 +1,12 @@
 // Refs: SPEC.md §7 — édition/suppression d'une compétence
 import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
-import { getApiClient, getPlatformRole } from "../../../../../lib/api";
-
-const ADMIN_ROLES = new Set(["super_admin", "admin"]);
+import { getApiClient, getPermissions } from "../../../../../lib/api";
+import { can } from "../../../../../lib/permissions";
 
 export default async function EditCompetencePage({ params }: { params: Promise<{ competenceId: string }> }) {
-  const [{ competenceId }, platformRole] = await Promise.all([params, getPlatformRole()]);
-  if (!ADMIN_ROLES.has(platformRole)) redirect("/dashboard");
+  const [{ competenceId }, permissions] = await Promise.all([params, getPermissions()]);
+  if (!can(permissions, "view.admin_competences")) redirect("/dashboard");
 
   const api = await getApiClient();
 
@@ -123,3 +122,4 @@ export default async function EditCompetencePage({ params }: { params: Promise<{
     </div>
   );
 }
+

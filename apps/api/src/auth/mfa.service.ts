@@ -3,12 +3,11 @@ import { Injectable, ForbiddenException, NotFoundException, UnauthorizedExceptio
 import speakeasy from "speakeasy";
 import QRCode from "qrcode";
 import { PrismaService } from "../prisma/prisma.service.js";
-import type { PlatformRole } from "./auth.types.js";
 
 export interface DisableMfaParams {
   readonly targetUserId: string;
   readonly callerId: string;
-  readonly callerRole: PlatformRole;
+  readonly callerCanDisableOthers: boolean;
   readonly code?: string;
 }
 
@@ -53,19 +52,17 @@ export class MfaService {
     });
   }
 
-  async disableMfa({ targetUserId, callerId, callerRole, code }: DisableMfaParams) {
+  async disableMfa({ targetUserId, callerId, callerCanDisableOthers, code }: DisableMfaParams) {
     const user = await this.prisma.user.findUnique({ where: { id: targetUserId } });
     if (!user) throw new NotFoundException(`User ${targetUserId} not found`);
 
     const isSelf = callerId === targetUserId;
-    const isSuperAdmin = callerRole === "super_admin";
 
-    if (!isSelf && !isSuperAdmin) {
-      throw new ForbiddenException("Only super_admin can disable MFA for another user");
+    if (!isSelf && !callerCanDisableOthers) {
+      throw new ForbiddenException("Missing permission to disable MFA for another user");
     }
 
-    // super_admin agissant sur un autre compte : pas de code requis
-    if (isSuperAdmin && !isSelf) {
+    if (callerCanDisableOthers && !isSelf) {
       return this.prisma.user.update({
         where: { id: targetUserId },
         data: { mfa_enabled: false, mfa_secret: null },

@@ -4,7 +4,7 @@ import { APP_GUARD, Reflector } from "@nestjs/core";
 import { JwtModule } from "@nestjs/jwt";
 import { PrismaModule } from "../prisma/prisma.module.js";
 import { MfaGuard } from "./mfa.guard.js";
-import { RolesGuard } from "./roles.guard.js";
+import { PermissionsGuard } from "./permissions.guard.js";
 import { AuthService } from "./auth.service.js";
 import { AuthController } from "./auth.controller.js";
 import { JwtMiddleware } from "./jwt.middleware.js";
@@ -28,7 +28,7 @@ import { JwtMiddleware } from "./jwt.middleware.js";
     },
     {
       provide: APP_GUARD,
-      useFactory: (reflector: Reflector) => new RolesGuard(reflector),
+      useFactory: (reflector: Reflector) => new PermissionsGuard(reflector),
       inject: [Reflector],
     },
   ],

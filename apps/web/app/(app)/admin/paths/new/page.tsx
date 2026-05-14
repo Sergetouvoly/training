@@ -1,14 +1,13 @@
 // Refs: SPEC-CONTENT.md §6.1 — création parcours admin
 import { redirect } from "next/navigation";
-import { getApiClient, getPlatformRole } from "../../../../../lib/api";
+import { getApiClient, getPermissions } from "../../../../../lib/api";
+import { can } from "../../../../../lib/permissions";
 import { NewPathForm } from "./NewPathForm";
 import Link from "next/link";
 
-const CONTENT_ROLES = new Set(["super_admin", "admin", "trainer"]);
-
 export default async function NewPathPage() {
-  const platformRole = await getPlatformRole();
-  if (!CONTENT_ROLES.has(platformRole)) redirect("/dashboard");
+  const permissions = await getPermissions();
+  if (!can(permissions, "view.admin_paths")) redirect("/dashboard");
 
   const api = await getApiClient();
   const modules = await api.learning.listModules().catch(() => [] as Awaited<ReturnType<typeof api.learning.listModules>>);
@@ -32,3 +31,4 @@ export default async function NewPathPage() {
     </div>
   );
 }
+

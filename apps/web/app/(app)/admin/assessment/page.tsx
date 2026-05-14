@@ -1,19 +1,18 @@
 // Refs: SPEC.md §3 L2, R-1.2 — gestion banque de questions admin
 import { redirect } from "next/navigation";
-import { getApiClient, getPlatformRole } from "../../../../lib/api";
+import { getApiClient, getPermissions } from "../../../../lib/api";
+import { can } from "../../../../lib/permissions";
 import Link from "next/link";
 import { AssessmentManager } from "./AssessmentManager";
 import type { EvaluationItem } from "@elearning/api-client";
-
-const CONTENT_ROLES = new Set(["super_admin", "admin", "trainer"]);
 
 export default async function AdminAssessmentPage({
   searchParams,
 }: {
   readonly searchParams: Promise<{ bank?: string }>;
 }) {
-  const [{ bank }, platformRole] = await Promise.all([searchParams, getPlatformRole()]);
-  if (!CONTENT_ROLES.has(platformRole)) redirect("/dashboard");
+  const [{ bank }, permissions] = await Promise.all([searchParams, getPermissions()]);
+  if (!can(permissions, "view.admin_assessment")) redirect("/dashboard");
 
   const api = await getApiClient();
   const items: EvaluationItem[] = await api.assessment.listItems().catch(() => []);
@@ -38,3 +37,4 @@ export default async function AdminAssessmentPage({
     </div>
   );
 }
+

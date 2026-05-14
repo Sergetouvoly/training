@@ -6,7 +6,9 @@ import type {
   Module, Lesson, Block, InlineContent,
   EvaluationItem, MiniQuizBlock as MiniQuizBlockType,
   VideoBlock as VideoBlockType,
+  ShapeBlock as ShapeBlockType,
 } from "@elearning/api-client";
+import { ShapeSvg } from "../../../admin/modules/[moduleId]/ShapeBlockEditor";
 
 // ── Utilitaires ───────────────────────────────────────────────────────────────
 
@@ -247,14 +249,34 @@ function BlockRenderer({ block }: { readonly block: Block }) {
         </a>
       );
 
+    case "shape": {
+      const s = block as ShapeBlockType;
+      const alignClass = s.align === "center" ? "mx-auto" : s.align === "right" ? "ml-auto" : "";
+      return (
+        <div className={`my-4 ${alignClass}`} style={{ width: s.width }}>
+          <ShapeSvg
+            shape={s.shape}
+            fill={s.fill_color}
+            border={s.border_color}
+            borderWidth={s.border_width}
+            width={s.width}
+            height={s.height}
+            label={s.label}
+            labelColor={s.label_color ?? "#ffffff"}
+            labelSize={s.label_size ?? 14}
+          />
+        </div>
+      );
+    }
+
     case "callout": {
       type CalloutStyle = { border: string; bg: string; icon: string; iconPath: React.ReactNode };
       const stylesMap: Record<string, CalloutStyle> = {
-        info:    { border: "border-primary/30",       bg: "bg-primary/5",   icon: "text-primary",    iconPath: <><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></> },
-        warning: { border: "border-orange-300",       bg: "bg-orange-50",   icon: "text-orange-600", iconPath: <><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></> },
-        danger:  { border: "border-red-300",          bg: "bg-red-50",      icon: "text-red-600",    iconPath: <><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></> },
-        success: { border: "border-green-300",        bg: "bg-green-50",    icon: "text-green-600",  iconPath: <><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></> },
-        tip:     { border: "border-accent-bright/60", bg: "bg-accent-soft", icon: "text-primary",    iconPath: <><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></> },
+        info:    { border: "border-primary/30",        bg: "bg-primary/5",        icon: "text-primary",      iconPath: <><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></> },
+        warning: { border: "border-amber-300",         bg: "bg-amber-50",         icon: "text-amber-700",    iconPath: <><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></> },
+        danger:  { border: "border-red-300",           bg: "bg-red-50",           icon: "text-red-600",      iconPath: <><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></> },
+        success: { border: "border-green-300",         bg: "bg-green-50",         icon: "text-green-700",    iconPath: <><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></> },
+        tip:     { border: "border-accent-bright/60",  bg: "bg-accent-soft",      icon: "text-primary",      iconPath: <><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></> },
       };
       const styles = stylesMap[block.variant] ?? stylesMap.info;
       return (
@@ -476,7 +498,7 @@ function MiniQuizBlock({ block }: { readonly block: MiniQuizBlockType }) {
 
 // Blocs rendus hors du wrapper prose-holenek (ont leur propre style)
 const READER_SPECIAL_TYPES = new Set([
-  "callout","audio","video","video_embed","file","scenario","key_takeaway","mini_quiz",
+  "shape","callout","audio","video","video_embed","file","scenario","key_takeaway","mini_quiz",
   "code","table",
 ]);
 
@@ -510,11 +532,14 @@ interface QuizProps {
   readonly items: EvaluationItem[];
   readonly moduleId: string;
   readonly moduleVersionHash: string;
+  readonly competenceId: string | null;
   readonly pathId: string;
-  readonly onComplete: (score: number) => void;
+  readonly passingScore: number;
+  readonly showExplanations: boolean;
+  readonly onComplete: (score: number, passed: boolean) => void;
 }
 
-function Quiz({ items, moduleId, moduleVersionHash, pathId, onComplete }: QuizProps) {
+function Quiz({ items, moduleId, moduleVersionHash, competenceId, pathId, passingScore, showExplanations, onComplete }: QuizProps) {
   const { data: session } = useSession();
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [submitted, setSubmitted] = useState(false);
@@ -541,15 +566,17 @@ function Quiz({ items, moduleId, moduleVersionHash, pathId, onComplete }: QuizPr
           learner_id: learnerId,
           module_id: moduleId,
           module_version_hash: moduleVersionHash,
+          ...(competenceId && { competence_id: competenceId }),
           answers: Object.entries(answers).map(([item_id, answer]) => ({ item_id, answer })),
         }),
       });
       if (!res.ok) throw new Error("evaluate failed");
       const result = await res.json();
       const pct = Math.round(result.performance_score);
+      const passed = result.passed ?? pct >= passingScore;
       setScore(pct);
       setSubmitted(true);
-      onComplete(pct);
+      onComplete(pct, passed);
     } catch {
       setError(true);
     } finally {
@@ -561,7 +588,7 @@ function Quiz({ items, moduleId, moduleVersionHash, pathId, onComplete }: QuizPr
   const allAnswered = answeredCount === items.length;
 
   if (submitted && score !== null) {
-    const passed = score >= 70;
+    const passed = score >= passingScore;
     return (
       <div className={`rounded-2xl border-2 p-10 text-center ${passed ? "border-green-300 bg-green-50" : "border-orange-300 bg-orange-50"}`}>
         <div className={`mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full ${passed ? "bg-green-100" : "bg-orange-100"}`}>
@@ -577,7 +604,7 @@ function Quiz({ items, moduleId, moduleVersionHash, pathId, onComplete }: QuizPr
         </div>
         <p className={`text-5xl font-extrabold ${passed ? "text-green-700" : "text-orange-700"}`}>{score}%</p>
         <p className={`mt-2 text-lg font-semibold ${passed ? "text-green-700" : "text-orange-700"}`}>
-          {passed ? "Compétence validée !" : "Score insuffisant — seuil : 70%"}
+          {passed ? "Compétence validée !" : `Score insuffisant — seuil : ${passingScore}%`}
         </p>
         <p className="mt-2 text-sm text-ink-soft max-w-sm mx-auto">
           {passed
@@ -598,25 +625,27 @@ function Quiz({ items, moduleId, moduleVersionHash, pathId, onComplete }: QuizPr
             </button>
           )}
         </div>
-        <div className="mt-10 text-left space-y-4 max-w-xl mx-auto">
-          <h3 className="font-bold text-primary-deep text-lg">Corrections détaillées</h3>
-          {items.map((item, qi) => {
-            const chosen = answers[item.id];
-            const correct = item.content.choices?.find((c) => c.is_correct)?.label;
-            const isOk = chosen === correct;
-            return (
-              <div key={item.id} className={`rounded-xl border p-5 text-sm ${isOk ? "border-green-200 bg-green-50" : "border-red-200 bg-red-50"}`}>
-                <p className="font-semibold text-ink mb-2">Q{qi + 1}. {item.content.question_fr}</p>
-                <p className={`text-xs font-medium ${isOk ? "text-green-700" : "text-red-700"}`}>
-                  {isOk ? "✓ Bonne réponse" : `✗ Votre réponse : ${chosen} — Bonne réponse : ${correct}`}
-                </p>
-                {item.content.explanation_fr && (
-                  <p className="mt-2 text-xs text-ink-soft leading-relaxed">{item.content.explanation_fr}</p>
-                )}
-              </div>
-            );
-          })}
-        </div>
+        {showExplanations && (
+          <div className="mt-10 text-left space-y-4 max-w-xl mx-auto">
+            <h3 className="font-bold text-primary-deep text-lg">Corrections détaillées</h3>
+            {items.map((item, qi) => {
+              const chosen = answers[item.id];
+              const correct = item.content.choices?.find((c) => c.is_correct)?.label;
+              const isOk = chosen === correct;
+              return (
+                <div key={item.id} className={`rounded-xl border p-5 text-sm ${isOk ? "border-green-200 bg-green-50" : "border-red-200 bg-red-50"}`}>
+                  <p className="font-semibold text-ink mb-2">Q{qi + 1}. {item.content.question_fr}</p>
+                  <p className={`text-xs font-medium ${isOk ? "text-green-700" : "text-red-700"}`}>
+                    {isOk ? "✓ Bonne réponse" : `✗ Votre réponse : ${chosen} — Bonne réponse : ${correct}`}
+                  </p>
+                  {item.content.explanation_fr && (
+                    <p className="mt-2 text-xs text-ink-soft leading-relaxed">{item.content.explanation_fr}</p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     );
   }
@@ -705,6 +734,8 @@ export function ModuleReader({ pathId, module, quizItems }: Props) {
   const lessons = module.content_fr?.lessons ?? [];
   const totalLessons = lessons.length;
   const unlockMode = module.content_fr?.lesson_unlock_mode ?? "free";
+  const passingScore = module.content_fr?.quiz_config?.passing_score ?? 70;
+  const showExplanations = module.content_fr?.quiz_config?.show_explanations ?? true;
 
   // En mode libre, "voir = lu" → la leçon courante est marquée d'office.
   // En mode séquentiel, rien n'est lu : l'apprenant doit scroller + cliquer "Marquer comme lu".
@@ -822,8 +853,7 @@ export function ModuleReader({ pathId, module, quizItems }: Props) {
     if (currentIndex > 0) goTo(currentIndex - 1);
   }
 
-  function handleQuizComplete(score: number) {
-    // Quiz passé : progression à 100%
+  function handleQuizComplete(score: number, passed: boolean) {
     void saveProgress(100);
   }
 
@@ -1000,13 +1030,16 @@ export function ModuleReader({ pathId, module, quizItems }: Props) {
                 <div className="mb-10">
                   <p className="text-xs font-bold uppercase tracking-widest text-primary mb-2">Évaluation finale</p>
                   <h1 className="text-3xl font-extrabold text-primary-deep">{module.title_fr}</h1>
-                  <p className="mt-3 text-ink-soft">{quizItems.length} questions · Seuil de validation : 70%</p>
+                  <p className="mt-3 text-ink-soft">{quizItems.length} questions · Seuil de validation : {passingScore}%</p>
                 </div>
                 <Quiz
                   items={quizItems}
                   moduleId={module.id}
                   moduleVersionHash={module.version_hash}
+                  competenceId={module.competence_ids[0] ?? null}
                   pathId={pathId}
+                  passingScore={passingScore}
+                  showExplanations={showExplanations}
                   onComplete={handleQuizComplete}
                 />
               </>

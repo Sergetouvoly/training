@@ -52,17 +52,17 @@ export class ItemService {
   }
 
   async findById(id: string) {
-    const item = await this.prisma.evaluationItem.findFirst({ where: { id } });
+    const item = await this.prisma.evaluationItem.findFirst({ where: { id, deleted_at: null } });
     if (!item) throw new NotFoundException(`Item ${id} not found`);
     return item;
   }
 
   async listAll() {
-    return this.prisma.evaluationItem.findMany({ orderBy: { created_at: "desc" } });
+    return this.prisma.evaluationItem.findMany({ where: { deleted_at: null }, orderBy: { created_at: "desc" } });
   }
 
   async listByBank(bankId: string) {
-    return this.prisma.evaluationItem.findMany({ where: { bank_id: bankId } });
+    return this.prisma.evaluationItem.findMany({ where: { bank_id: bankId, deleted_at: null } });
   }
 
   async update(id: string, dto: UpdateItemDto) {
@@ -80,12 +80,12 @@ export class ItemService {
 
   async remove(id: string) {
     await this.findById(id);
-    return this.prisma.evaluationItem.delete({ where: { id } });
+    return this.prisma.evaluationItem.update({ where: { id }, data: { deleted_at: new Date() } });
   }
 
   async drawStratified(config: DrawConfig) {
     const allItems = await this.prisma.evaluationItem.findMany({
-      where: { bank_id: config.bank_id },
+      where: { bank_id: config.bank_id, deleted_at: null },
     });
 
     if (allItems.length === 0) return [];

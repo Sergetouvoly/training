@@ -279,7 +279,7 @@ export function UserList({ initialUsers, canCreate }: Props) {
                         href={`/admin/users/${user.id}`}
                         className="rounded-lg border border-surface-warm px-3 py-1.5 text-xs font-medium text-ink hover:bg-surface hover:border-primary/30 transition-colors"
                       >
-                        Éditer
+                        Gérer
                       </Link>
                     </td>
                   </tr>

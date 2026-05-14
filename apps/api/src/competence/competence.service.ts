@@ -19,17 +19,17 @@ export class CompetenceService {
   constructor(private readonly prisma: PrismaService) {}
 
   async listAll() {
-    return this.prisma.competence.findMany({ orderBy: { code: "asc" } });
+    return this.prisma.competence.findMany({ where: { deleted_at: null }, orderBy: { code: "asc" } });
   }
 
   async findById(id: string) {
-    const c = await this.prisma.competence.findUnique({ where: { id } });
+    const c = await this.prisma.competence.findFirst({ where: { id, deleted_at: null } });
     if (!c) throw new NotFoundException(`Competence ${id} not found`);
     return c;
   }
 
   async create(dto: CreateCompetenceDto) {
-    const existing = await this.prisma.competence.findFirst({ where: { code: dto.code } });
+    const existing = await this.prisma.competence.findFirst({ where: { code: dto.code, deleted_at: null } });
     if (existing) throw new ConflictException(`Code ${dto.code} already exists`);
     return this.prisma.competence.create({ data: { code: dto.code, label_fr: dto.label_fr, label_en: dto.label_en } });
   }
@@ -47,6 +47,6 @@ export class CompetenceService {
 
   async remove(id: string) {
     await this.findById(id);
-    return this.prisma.competence.delete({ where: { id } });
+    return this.prisma.competence.update({ where: { id }, data: { deleted_at: new Date() } });
   }
 }

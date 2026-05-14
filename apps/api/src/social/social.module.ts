@@ -4,12 +4,13 @@ import { LitfService } from "./litf.service.js";
 import { BuddyService } from "./buddy.service.js";
 import { ChallengeService } from "./challenge.service.js";
 import { NotificationService } from "./notification.service.js";
+import { EmailService } from "./email.service.js";
 import { SocialController } from "./social.controller.js";
 
 @Module({
   imports: [PrismaModule],
   controllers: [SocialController],
-  providers: [LitfService, BuddyService, ChallengeService, NotificationService],
-  exports: [NotificationService],
+  providers: [LitfService, BuddyService, ChallengeService, NotificationService, EmailService],
+  exports: [NotificationService, EmailService],
 })
 export class SocialModule {}

@@ -70,6 +70,58 @@ export class TeamAnalyticsService {
       computed_at: now.toISOString(),
     };
   }
+
+  async getTeamModuleProgress(teamId: string): Promise<TeamModuleProgress[]> {
+    const learners = await this.prisma.learner.findMany({
+      where: { team_id: teamId },
+      select: { id: true },
+    });
+    if (learners.length === 0) return [];
+
+    const learnerIds = learners.map((l) => l.id);
+
+    const events = await this.prisma.domainEvent.findMany({
+      where: { event_name: "ProgressUpdated" },
+      orderBy: { occurred_at: "desc" },
+    });
+
+    // Déduplique : dernier event par (learner_id, module_id) pour les membres de l'équipe
+    const latestByKey = new Map<string, { module_id: string; progress_percent: number }>();
+    for (const ev of events) {
+      const p = ev.payload as { learner_id?: string; module_id?: string; progress_percent?: number };
+      if (!p.learner_id || !p.module_id || !learnerIds.includes(p.learner_id)) continue;
+      const key = `${p.learner_id}:${p.module_id}`;
+      if (!latestByKey.has(key)) {
+        latestByKey.set(key, { module_id: p.module_id, progress_percent: p.progress_percent ?? 0 });
+      }
+    }
+
+    // Agrège par module_id
+    const byModule = new Map<string, { total: number; completed: number; count: number }>();
+    for (const { module_id, progress_percent } of latestByKey.values()) {
+      const existing = byModule.get(module_id) ?? { total: 0, completed: 0, count: 0 };
+      existing.total += progress_percent;
+      existing.count += 1;
+      if (progress_percent >= 100) existing.completed += 1;
+      byModule.set(module_id, existing);
+    }
+
+    return [...byModule.entries()]
+      .map(([module_id, { total, completed, count }]) => ({
+        module_id,
+        avg_completion_percent: Math.round(total / count),
+        member_count: count,
+        completed_count: completed,
+      }))
+      .sort((a, b) => b.avg_completion_percent - a.avg_completion_percent);
+  }
+}
+
+export interface TeamModuleProgress {
+  module_id: string;
+  avg_completion_percent: number;
+  member_count: number;
+  completed_count: number;
 }
 
 function emptyAggregate(teamId: string): TeamAggregate {
