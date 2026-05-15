@@ -6,6 +6,7 @@ import StarterKit from "@tiptap/starter-kit";
 import Link from "@tiptap/extension-link";
 import { ResizableImage, ImageToolbarButton } from "./ResizableImageExtension";
 import { ShapeNode, ShapeToolbarButton } from "./ShapeNodeExtension";
+import { ColorPickerButton } from "../../../../../components/ColorPickerButton";
 import Placeholder from "@tiptap/extension-placeholder";
 import Underline from "@tiptap/extension-underline";
 import TextAlign from "@tiptap/extension-text-align";
@@ -164,29 +165,6 @@ const FONT_FAMILIES = [
   { label: "Arial", value: "Arial, sans-serif" },
 ];
 
-// Palette couleurs texte — tokens Holenek officiels
-const TEXT_COLORS = [
-  { label: "Texte principal",  value: "#3a3a3a" },  // ink
-  { label: "Texte doux",       value: "#595959" },  // ink-soft
-  { label: "Teal Holenek",     value: "#1a6c7a" },  // primary
-  { label: "Navy Holenek",     value: "#153243" },  // primary-deep
-  { label: "Navy profond",     value: "#000f2b" },  // primary-darkest
-  { label: "Bleu-gris",        value: "#87A8B9" },  // muted
-  { label: "Alerte rouge",     value: "#dc2626" },
-  { label: "Succès vert",      value: "#16a34a" },
-  { label: "Warning ambre",    value: "#d97706" },
-];
-
-// Palette surlignage — fonds clairs issus des tokens Holenek
-const HIGHLIGHT_COLORS = [
-  { label: "Teal clair",       value: "#f3f9fb" },  // accent-soft
-  { label: "Periwinkle",       value: "#BFD1FF" },  // accent-bright
-  { label: "Ambre clair",      value: "#fef3c7" },
-  { label: "Vert clair",       value: "#dcfce7" },
-  { label: "Rouge clair",      value: "#fee2e2" },
-  { label: "Gris doux",        value: "#f1f5f9" },
-];
-
 function ToolbarBtn({
   label, action, active = false, title,
 }: {
@@ -210,52 +188,6 @@ function ToolbarBtn({
 
 function ToolbarDivider() {
   return <div className="w-px h-5 bg-surface-warm shrink-0 mx-0.5" />;
-}
-
-function ColorPicker({
-  colors, onSelect, current, title, icon,
-}: {
-  readonly colors: { label: string; value: string }[];
-  readonly onSelect: (v: string) => void;
-  readonly current?: string;
-  readonly title: string;
-  readonly icon: React.ReactNode;
-}) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="relative">
-      <button
-        type="button"
-        onMouseDown={(e) => { e.preventDefault(); setOpen((v) => !v); }}
-        title={title}
-        className="flex items-center gap-1 rounded px-2 py-1.5 text-xs font-medium text-ink hover:bg-surface transition-colors"
-      >
-        {icon}
-        <span className="w-3 h-1.5 rounded-sm inline-block border border-black/10" style={{ background: current ?? "#0f172a" }} />
-        <svg width="8" height="8" viewBox="0 0 10 6" fill="currentColor" aria-hidden="true"><path d="M0 0l5 6 5-6z"/></svg>
-      </button>
-      {open && (
-        <div className="absolute top-full left-0 mt-1 z-30 bg-white border border-surface-warm rounded-xl shadow-lg p-2 flex flex-wrap gap-1.5 w-44">
-          {colors.map((c) => (
-            <button
-              key={c.value}
-              type="button"
-              title={c.label}
-              onMouseDown={(e) => { e.preventDefault(); onSelect(c.value); setOpen(false); }}
-              className="w-6 h-6 rounded-full border-2 transition-transform hover:scale-110"
-              style={{ background: c.value, borderColor: current === c.value ? "#1a6c7a" : "transparent" }}
-            />
-          ))}
-          <button
-            type="button"
-            onMouseDown={(e) => { e.preventDefault(); onSelect(""); setOpen(false); }}
-            title="Supprimer"
-            className="w-6 h-6 rounded-full border border-surface-warm bg-white flex items-center justify-center text-[10px] text-ink-soft hover:bg-surface"
-          >✕</button>
-        </div>
-      )}
-    </div>
-  );
 }
 
 function Toolbar({ editor, moduleId }: { readonly editor: any; readonly moduleId: string }) {
@@ -301,18 +233,22 @@ function Toolbar({ editor, moduleId }: { readonly editor: any; readonly moduleId
 
       <ToolbarDivider />
 
-      {/* Couleurs */}
-      <ColorPicker
-        colors={TEXT_COLORS}
-        current={currentColor}
-        onSelect={(v) => v ? editor.chain().focus().setColor(v).run() : editor.chain().focus().unsetColor().run()}
+      {/* Couleurs — color picker avancé */}
+      <ColorPickerButton
+        value={currentColor ?? "#3a3a3a"}
+        onChange={(hex) => editor.chain().focus().setColor(hex).run()}
+        onNone={() => editor.chain().focus().unsetColor().run()}
+        allowNone
+        allowAlpha={false}
         title="Couleur du texte"
-        icon={<span className="font-bold text-xs" style={{ color: currentColor ?? "#0f172a" }}>A</span>}
+        icon={<span className="font-bold text-xs" style={{ color: currentColor ?? "#3a3a3a" }}>A</span>}
       />
-      <ColorPicker
-        colors={HIGHLIGHT_COLORS}
-        current={currentHighlight}
-        onSelect={(v) => v ? editor.chain().focus().setHighlight({ color: v }).run() : editor.chain().focus().unsetHighlight().run()}
+      <ColorPickerButton
+        value={currentHighlight ?? "#BFD1FF"}
+        onChange={(hex) => editor.chain().focus().setHighlight({ color: hex }).run()}
+        onNone={() => editor.chain().focus().unsetHighlight().run()}
+        allowNone
+        allowAlpha={false}
         title="Surlignage"
         icon={<span className="text-xs">🖊</span>}
       />

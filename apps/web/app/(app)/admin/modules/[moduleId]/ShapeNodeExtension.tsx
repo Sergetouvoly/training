@@ -5,6 +5,7 @@ import { Node, mergeAttributes, type NodeViewRendererProps } from "@tiptap/core"
 import { ReactNodeViewRenderer, NodeViewWrapper } from "@tiptap/react";
 import { useState, useRef, useCallback, useEffect } from "react";
 import type { ShapeType } from "@elearning/api-client";
+import { ColorPickerButton } from "../../../../../components/ColorPickerButton";
 
 // ── Augmentation de type ──────────────────────────────────────────────────────
 
@@ -295,11 +296,30 @@ function ShapeNodeView({ node, updateAttributes, selected }: ShapeViewProps) {
             {panel === "couleurs" && (
               <div className="space-y-2.5">
                 <div>
-                  <p className="mb-1 text-[10px] font-semibold text-ink-soft uppercase">Remplissage</p>
+                  <div className="mb-1 flex items-center justify-between">
+                    <p className="text-[10px] font-semibold text-ink-soft uppercase">Remplissage</p>
+                    <ColorPickerButton
+                      value={fillColor}
+                      onChange={(hex) => updateAttributes({ fillColor: hex })}
+                      allowAlpha
+                      title="Couleur de remplissage avancée"
+                      align="right"
+                      icon={<span className="text-[9px] font-semibold text-primary">+</span>}
+                    />
+                  </div>
                   <ColorDots current={fillColor} onPick={(v) => v && updateAttributes({ fillColor: v })} />
                 </div>
                 <div>
-                  <p className="mb-1 text-[10px] font-semibold text-ink-soft uppercase">Bordure</p>
+                  <div className="mb-1 flex items-center justify-between">
+                    <p className="text-[10px] font-semibold text-ink-soft uppercase">Bordure</p>
+                    <ColorPickerButton
+                      value={borderColor ?? "#153243"}
+                      onChange={(hex) => updateAttributes({ borderColor: hex, borderWidth: borderWidth || 2 })}
+                      title="Couleur de bordure avancée"
+                      align="right"
+                      icon={<span className="text-[9px] font-semibold text-primary">+</span>}
+                    />
+                  </div>
                   <ColorDots
                     current={borderColor ?? undefined}
                     allowNone
