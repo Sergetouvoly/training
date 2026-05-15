@@ -98,6 +98,9 @@ export const PERMISSIONS = [
   // ─── Planificateur (cron) ────────────────────────────────
   "scheduler.manage",     // activer/desactiver les taches cron via app_config
 
+  // ─── TTS (synthese audio) ────────────────────────────────
+  "tts.generate",         // generer l'audio d'un module via le service TTS
+
   // ─── Corbeille ───────────────────────────────────────────
   "trash.read",    // voir la corbeille
   "trash.restore", // restaurer un element

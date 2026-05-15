@@ -34,6 +34,29 @@ export class TtsService {
     private readonly learningService: LearningService,
   ) {}
 
+  // Vérifie que le microservice TTS est joignable. Utilisé par l'UI avant d'afficher
+  // le formulaire de génération, et avant chaque lancement pour éviter les attentes inutiles.
+  async checkHealth(): Promise<{ available: boolean; reason?: string; model_loaded?: boolean }> {
+    if (!TTS_SECRET) {
+      return { available: false, reason: "TTS_SHARED_SECRET non configuré côté serveur" };
+    }
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 3000);
+    try {
+      const res = await fetch(`${TTS_URL}/health`, { signal: controller.signal });
+      clearTimeout(timer);
+      if (!res.ok) return { available: false, reason: `TTS répond avec ${res.status}` };
+      const data = (await res.json().catch(() => ({}))) as { model_loaded?: boolean };
+      return { available: true, model_loaded: data.model_loaded };
+    } catch (e: any) {
+      clearTimeout(timer);
+      const reason = e?.name === "AbortError"
+        ? "TTS injoignable (timeout)"
+        : `TTS injoignable : ${e?.message ?? "erreur réseau"}`;
+      return { available: false, reason };
+    }
+  }
+
   async generateForModule(moduleId: string, dto: GenerateAudioDto): Promise<GenerateAudioResult> {
     if (!TTS_SECRET) {
       throw new InternalServerErrorException("TTS_SHARED_SECRET is not configured");

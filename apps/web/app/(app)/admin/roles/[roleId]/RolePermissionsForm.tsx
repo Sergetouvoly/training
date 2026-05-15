@@ -19,10 +19,12 @@ const PERMISSION_GROUPS: PermGroup[] = PERMISSIONS.reduce<PermGroup[]>((acc, p) 
 const RESOURCE_LABELS: Record<string, string> = {
   user: "Utilisateurs", learner: "Apprenants", competence: "Compétences",
   module: "Modules", learning_path: "Parcours", evaluation_item: "Questions",
+  assignment: "Assignation de formations",
   stamp: "Stamps", mastery: "Maîtrise", scenario: "Scénarios",
   challenge: "Challenges", analytics: "Analytiques", app_config: "Configuration",
-  ai: "Intelligence artificielle", audit: "Audit", role: "Rôles",
-  trash: "Corbeille", view: "Vues & Espaces",
+  ai: "Intelligence artificielle", audit: "Audit", certificate: "Certificats",
+  notification: "Notifications", scheduler: "Planificateur", tts: "Synthèse audio",
+  role: "Rôles", trash: "Corbeille", view: "Vues & Espaces",
 };
 
 // ─── Composant ────────────────────────────────────────────────────────────────

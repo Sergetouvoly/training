@@ -1,10 +1,16 @@
 "use client";
 // Refs: dev_idea.txt — bouton de génération audio TTS dans la toolbar du module
+// Health check au montage : si pas de permission ou service down, bouton caché/désactivé.
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 
 type Lang = "fr" | "en" | "ko" | "ja";
 type Status = "idle" | "loading-preview" | "ready" | "generating" | "success" | "error";
+type Availability =
+  | { state: "loading" }
+  | { state: "forbidden" }                          // permission tts.generate manquante → on cache
+  | { state: "unavailable"; reason: string }        // service down → bouton désactivé
+  | { state: "ok" };
 
 const LANGUAGES: { code: Lang; label: string }[] = [
   { code: "fr", label: "Français" },
@@ -22,6 +28,7 @@ interface Props {
 
 export function TtsGenerateButton({ moduleId, hasUnsavedChanges = false }: Props) {
   const router = useRouter();
+  const [availability, setAvailability] = useState<Availability>({ state: "loading" });
   const [open, setOpen] = useState(false);
   const [status, setStatus] = useState<Status>("idle");
   const [preview, setPreview] = useState<{ length: number; has_audio: boolean } | null>(null);
@@ -32,9 +39,30 @@ export function TtsGenerateButton({ moduleId, hasUnsavedChanges = false }: Props
   const [result, setResult] = useState<{ url: string; duration_seconds: number } | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
 
+  // Health check au montage : permission + service disponible
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/tts/health")
+      .then((r) => r.json().then((d) => ({ status: r.status, d })))
+      .then(({ status, d }) => {
+        if (cancelled) return;
+        if (status === 401 || status === 403) {
+          setAvailability({ state: "forbidden" });
+        } else if (d?.available) {
+          setAvailability({ state: "ok" });
+        } else {
+          setAvailability({ state: "unavailable", reason: d?.reason ?? "Service indisponible" });
+        }
+      })
+      .catch((e) => {
+        if (!cancelled) setAvailability({ state: "unavailable", reason: e?.message ?? "Erreur réseau" });
+      });
+    return () => { cancelled = true; };
+  }, []);
+
   // Charge l'aperçu (longueur du texte + audio existant) à l'ouverture
   useEffect(() => {
-    if (!open) return;
+    if (!open || availability.state !== "ok") return;
     let cancelled = false;
     setStatus("loading-preview");
     setError(null);
@@ -54,7 +82,7 @@ export function TtsGenerateButton({ moduleId, hasUnsavedChanges = false }: Props
       })
       .catch((e) => { if (!cancelled) { setStatus("error"); setError(e?.message ?? "Erreur"); } });
     return () => { cancelled = true; };
-  }, [open, moduleId]);
+  }, [open, moduleId, availability.state]);
 
   // Fermeture Échap
   useEffect(() => {
@@ -91,6 +119,44 @@ export function TtsGenerateButton({ moduleId, hasUnsavedChanges = false }: Props
 
   const minutes = preview ? Math.max(1, Math.round(preview.length / 1000)) : 0;
   const isBlocking = status === "generating";
+
+  // Pas la permission → on cache complètement
+  if (availability.state === "forbidden") return null;
+
+  // Service indisponible → bouton désactivé avec tooltip explicite
+  if (availability.state === "unavailable") {
+    return (
+      <button
+        type="button"
+        disabled
+        title={`Service audio indisponible : ${availability.reason}`}
+        aria-label={`Génération audio indisponible : ${availability.reason}`}
+        className="flex items-center gap-2 rounded-xl border border-surface-warm px-4 py-2 text-sm font-medium text-ink-soft/60 cursor-not-allowed"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>
+        </svg>
+        Audio indisponible
+      </button>
+    );
+  }
+
+  // Loading initial : bouton neutre (évite le flash)
+  if (availability.state === "loading") {
+    return (
+      <button
+        type="button"
+        disabled
+        aria-label="Vérification du service audio…"
+        className="flex items-center gap-2 rounded-xl border border-surface-warm px-4 py-2 text-sm font-medium text-ink-soft/40"
+      >
+        <svg className="animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+          <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+        </svg>
+        Audio…
+      </button>
+    );
+  }
 
   return (
     <>

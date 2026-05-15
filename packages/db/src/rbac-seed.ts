@@ -23,6 +23,7 @@ export const ROLE_PERMISSIONS: Record<keyof typeof SYSTEM_ROLE_CODES, readonly P
     "app_config.read", "app_config.write", "ai.index_document", "audit.read",
     "certificate.download", "audit.export",
     "notification.send", "scheduler.manage",
+    "tts.generate",
     "role.read", "role.assign",
     "trash.read", "trash.restore",
     // Assignation — admin : acces total, cross-team inclus, peut montrer l'assignant
@@ -44,6 +45,7 @@ export const ROLE_PERMISSIONS: Record<keyof typeof SYSTEM_ROLE_CODES, readonly P
     "learning_path.read",
     "evaluation_item.read", "evaluation_item.create", "evaluation_item.update", "evaluation_item.delete", "evaluation_item.import_csv",
     "certificate.download",
+    "tts.generate",
     // Assignation — trainer : scope tous apprenants par defaut (cross_team via grant individuel)
     "assignment.create", "assignment.read", "assignment.delete",
     // Vues

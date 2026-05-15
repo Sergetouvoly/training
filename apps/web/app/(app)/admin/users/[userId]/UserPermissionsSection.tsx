@@ -12,7 +12,7 @@ const RESOURCE_LABELS: Record<string, string> = {
   stamp: "Stamps", mastery: "Maîtrise", scenario: "Scénarios",
   challenge: "Challenges", analytics: "Analytiques", app_config: "Configuration",
   ai: "Intelligence artificielle", audit: "Audit", certificate: "Certificats",
-  notification: "Notifications", scheduler: "Planificateur",
+  notification: "Notifications", scheduler: "Planificateur", tts: "Synthèse audio",
   role: "Rôles", trash: "Corbeille", view: "Vues",
 };
 
