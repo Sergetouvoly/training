@@ -241,7 +241,7 @@ export function ColorPicker({
             onMouseDown={onSLDown}
             className="relative h-32 w-full cursor-crosshair rounded-lg overflow-hidden"
             style={{
-              background: `hsl(${hsl.h}, 100%, 50%)`,
+              backgroundColor: `hsl(${hsl.h}, 100%, 50%)`,
               backgroundImage:
                 "linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, transparent)",
             }}
@@ -292,15 +292,10 @@ export function ColorPicker({
           {/* Aperçu + HEX */}
           <div className="flex items-center gap-2">
             <div
-              className="h-9 w-9 shrink-0 rounded-lg border border-surface-warm"
-              style={{
-                background: currentHex,
-                backgroundImage: alpha < 1
-                  ? "repeating-conic-gradient(#ccc 0% 25%, #fff 0% 50%) 50%/8px 8px"
-                  : undefined,
-              }}
+              className="h-9 w-9 shrink-0 rounded-lg border border-surface-warm overflow-hidden"
+              style={{ backgroundImage: "repeating-conic-gradient(#ccc 0% 25%, #fff 0% 50%)", backgroundSize: "8px 8px" }}
             >
-              <div className="h-full w-full rounded-lg" style={{ background: currentHex }} />
+              <div className="h-full w-full" style={{ backgroundColor: currentHex }} />
             </div>
             <input
               type="text"
