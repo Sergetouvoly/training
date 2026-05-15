@@ -8,7 +8,7 @@ import type {
   VideoBlock as VideoBlockType,
   ShapeBlock as ShapeBlockType,
 } from "@elearning/api-client";
-import { ShapeSvg } from "../../../admin/modules/[moduleId]/ShapeBlockEditor";
+import { ShapeSvg } from "../../../admin/modules/[moduleId]/ShapeNodeExtension";
 
 // ── Utilitaires ───────────────────────────────────────────────────────────────
 

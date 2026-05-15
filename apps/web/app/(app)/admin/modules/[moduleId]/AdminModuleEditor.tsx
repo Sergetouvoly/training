@@ -5,6 +5,7 @@ import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Link from "@tiptap/extension-link";
 import { ResizableImage, ImageToolbarButton } from "./ResizableImageExtension";
+import { ShapeNode, ShapeToolbarButton } from "./ShapeNodeExtension";
 import Placeholder from "@tiptap/extension-placeholder";
 import Underline from "@tiptap/extension-underline";
 import TextAlign from "@tiptap/extension-text-align";
@@ -13,8 +14,7 @@ import { TextStyle } from "@tiptap/extension-text-style";
 import Highlight from "@tiptap/extension-highlight";
 import FontFamily from "@tiptap/extension-font-family";
 import { Table, TableRow, TableCell, TableHeader } from "@tiptap/extension-table";
-import type { Module, ModuleContent, ModuleQuizConfig, Lesson, Block, VideoBlock, ShapeBlock } from "@elearning/api-client";
-import { ShapeBlockEditor } from "./ShapeBlockEditor";
+import type { Module, ModuleContent, ModuleQuizConfig, Lesson, Block, VideoBlock } from "@elearning/api-client";
 
 // ── Conversion TipTap JSON → blocs Holenek ───────────────────────────────────
 // TipTap produit son propre format JSON. On stocke directement ce JSON dans
@@ -29,7 +29,7 @@ function tiptapToBlocks(doc: any, previousBlocks: Block[] = []): Block[] {
     const typeMap: Record<string, string> = {
       heading: "heading", bulletList: "bullet_list", orderedList: "ordered_list",
       blockquote: "blockquote", image: "image", resizableImage: "image",
-      codeBlock: "code", horizontalRule: "divider",
+      codeBlock: "code", horizontalRule: "divider", shapeNode: "shape",
     };
     const expectedType = typeMap[node.type] ?? "paragraph";
     const id = (prev && prev.type === expectedType) ? prev.id : Math.random().toString(36).slice(2, 9);
@@ -60,6 +60,20 @@ function tiptapToBlocks(doc: any, previousBlocks: Block[] = []): Block[] {
         return { id, type: "code", language: node.attrs?.language ?? "text", code: node.content?.[0]?.text ?? "" };
       case "horizontalRule":
         return { id, type: "divider" };
+      case "shapeNode":
+        return {
+          id, type: "shape",
+          shape: node.attrs?.shape ?? "circle",
+          fill_color: node.attrs?.fillColor ?? "#1a6c7a",
+          border_color: node.attrs?.borderColor ?? undefined,
+          border_width: node.attrs?.borderWidth ?? 2,
+          width: node.attrs?.width ?? 120,
+          height: node.attrs?.height ?? 120,
+          align: node.attrs?.align ?? "center",
+          label: node.attrs?.label ?? undefined,
+          label_color: node.attrs?.labelColor ?? undefined,
+          label_size: node.attrs?.labelSize ?? undefined,
+        };
       default:
         return { id, type: "paragraph", content: inlineFromTiptap(node.content), textAlign };
     }
@@ -103,6 +117,12 @@ function blocksToTiptap(blocks: Block[]): any {
         case "image":       return { type: "resizableImage", attrs: { src: b.url, alt: b.alt, title: b.caption, width: typeof b.width === "number" ? b.width : 480, align: b.align ?? "center" } };
         case "code":        return { type: "codeBlock", attrs: { language: b.language }, content: b.code ? [{ type: "text", text: b.code }] : [] };
         case "divider":     return { type: "horizontalRule" };
+        case "shape":       return { type: "shapeNode", attrs: {
+          shape: b.shape, fillColor: b.fill_color, borderColor: b.border_color ?? null,
+          borderWidth: b.border_width ?? 2, width: b.width, height: b.height,
+          align: b.align, label: b.label ?? null, labelColor: b.label_color ?? "#ffffff",
+          labelSize: b.label_size ?? 14,
+        } };
         default:            return { type: "paragraph", content: [] };
       }
     }),
@@ -349,6 +369,7 @@ function Toolbar({ editor, moduleId }: { readonly editor: any; readonly moduleId
       <ToolbarDivider />
 
       <ImageToolbarButton editor={editor} moduleId={moduleId} />
+      <ShapeToolbarButton editor={editor} />
       <LinkButton editor={editor} />
     </div>
   );
@@ -511,7 +532,7 @@ function UploadButton({
 
 // ── Blocs spéciaux (non-éditables via TipTap) ────────────────────────────────
 
-type SpecialBlockType = "callout" | "audio" | "video" | "video_embed" | "file" | "scenario" | "key_takeaway" | "mini_quiz" | "shape";
+type SpecialBlockType = "callout" | "audio" | "video" | "video_embed" | "file" | "scenario" | "key_takeaway" | "mini_quiz";
 
 function SpecialBlockAdder({ onAdd, onAddText }: {
   readonly onAdd: (b: Block) => void;
@@ -521,7 +542,6 @@ function SpecialBlockAdder({ onAdd, onAddText }: {
   const [open, setOpen] = useState(false);
 
   const types: { type: SpecialBlockType; label: string; icon: string }[] = [
-    { type: "shape",        label: "Forme (carré, rond, triangle…)",       icon: "🔷" },
     { type: "callout",      label: "Encadré (info / warning / danger)",   icon: "💡" },
     { type: "audio",        label: "Audio (upload ou URL)",               icon: "🎵" },
     { type: "video",        label: "Vidéo (upload local)",                icon: "🎬" },
@@ -535,7 +555,6 @@ function SpecialBlockAdder({ onAdd, onAddText }: {
   function createBlock(type: SpecialBlockType): Block {
     const id = Math.random().toString(36).slice(2, 9);
     switch (type) {
-      case "shape":        return { id, type, shape: "circle", fill_color: "#1a6c7a", width: 120, height: 120, align: "center" } satisfies ShapeBlock;
       case "callout":      return { id, type, variant: "info", title: "", content: [{ type: "text", text: "Votre message ici." }] };
       case "audio":        return { id, type, url: "", title: "Audio", duration_seconds: 0 };
       case "video":        return { id, type: "video" as const, url: "", title: "Vidéo" };
@@ -611,12 +630,6 @@ function SpecialBlockEditor({ block, onChange, onDelete, onDuplicate, moduleId }
 
   function renderFields() {
     switch (block.type) {
-      case "shape": return (
-        <ShapeBlockEditor
-          block={block as ShapeBlock}
-          onChange={(b) => onChange(b)}
-        />
-      );
       case "callout": return (
         <div className="space-y-3">
           <div>
@@ -738,7 +751,7 @@ function SpecialBlockEditor({ block, onChange, onDelete, onDuplicate, moduleId }
   }
 
   const typeLabels: Record<string, string> = {
-    shape: "🔷 Forme", callout: "💡 Encadré", audio: "🎵 Audio", video: "🎬 Vidéo",
+    callout: "💡 Encadré", audio: "🎵 Audio", video: "🎬 Vidéo",
     video_embed: "▶️ Vidéo embed", file: "📎 Fichier",
     scenario: "📋 Scénario", key_takeaway: "⭐ Points clés", mini_quiz: "❓ Mini-quiz",
   };
@@ -757,7 +770,7 @@ function SpecialBlockEditor({ block, onChange, onDelete, onDuplicate, moduleId }
 // Un "segment" est soit un éditeur TipTap (blocs texte consécutifs) soit un bloc spécial isolé.
 // Cela permet d'intercaler du texte avant et après chaque bloc spécial.
 
-const SPECIAL_TYPES = new Set(["shape","callout","audio","video","video_embed","file","scenario","key_takeaway","mini_quiz"]);
+const SPECIAL_TYPES = new Set(["callout","audio","video","video_embed","file","scenario","key_takeaway","mini_quiz"]);
 
 type Segment =
   | { kind: "text";    segId: string; blocks: Block[] }
@@ -897,6 +910,7 @@ function TextSegmentEditor({ segId, lessonId, blocks, onSave, moduleId }: {
         codeBlock: { HTMLAttributes: { class: "language-text" } },
       }),
       ResizableImage,
+      ShapeNode,
       Link.configure({ openOnClick: false, HTMLAttributes: { rel: "noopener noreferrer" } }),
       Placeholder.configure({ placeholder: "Écrivez ici…" }),
       Underline,
