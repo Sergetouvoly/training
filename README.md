@@ -28,6 +28,7 @@ Monorepo Turborepo — Next.js 15 (frontend) + NestJS (API) + PostgreSQL + Prism
 - **Certificats & audit** — export PDF de certificat (R-1.5), dossier d'audit JSON signé (R-4.3)
 - **Notifications** — in-app actionnables, email SMTP, rappels automatiques (cron) : stamps expirants, assignations en retard, streaks
 - **Onboarding** — wizard 3 étapes à la première connexion d'un apprenant
+- **TTS audio** — synthèse vocale du contenu de module via microservice Python (supertonic), conversion MP3, multilingue (fr/en/ko/ja)
 
 ---
 
@@ -186,6 +187,37 @@ Le champ **Code MFA** sur la page de connexion est optionnel — laisser vide.
 Pour se déconnecter : menu utilisateur (coin supérieur droit) → **Déconnexion**.
 
 > **Note RBAC** — admin, formateur et manager héritent des droits apprenant : ils peuvent suivre des formations en plus de leur espace dédié.
+
+---
+
+## Service TTS (synthèse audio)
+
+Microservice Python séparé qui génère un MP3 à partir du texte d'un module via [supertonic](https://github.com/supertonic-ai/supertonic).
+
+### Démarrage
+
+```bash
+# Variable obligatoire (à mettre dans .env racine et apps/api/.env)
+TTS_SHARED_SECRET=<chaîne aléatoire 64 chars>
+
+# Lancement du service (Docker compose)
+docker compose -f docker/docker-compose.yml up tts -d
+
+# Vérifier
+curl http://localhost:3002/health
+```
+
+> Le premier démarrage télécharge le modèle supertonic (~plusieurs centaines de Mo). Le cache est persisté dans le volume Docker `tts_cache`.
+
+### Utilisation
+
+Dans l'éditeur d'un module (`/admin/modules/:id`), bouton **« Générer l'audio »** dans la toolbar. Choix langue (fr/en/ko/ja) et voix (M1/M2/F1/F2). L'audio est attaché au champ `audio_summary_url` du module et lu par l'apprenant dans le `ModuleReader`.
+
+**Endpoints** (NestJS, protégés par `module.update`) :
+- `GET /tts/preview/:moduleId` — aperçu (longueur de texte, présence d'un audio existant)
+- `POST /tts/generate/:moduleId` body `{ lang, voice, replace }` — génération + upload média
+
+Voir [`services/tts/README.md`](services/tts/README.md) pour la documentation détaillée du microservice.
 
 ---
 

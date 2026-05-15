@@ -16,6 +16,7 @@ import { RoleModule } from "./role/role.module.js";
 import { TrashModule } from "./trash/trash.module.js";
 import { AssignmentModule } from "./assignment/assignment.module.js";
 import { SchedulerModule } from "./scheduler/scheduler.module.js";
+import { TtsModule } from "./tts/tts.module.js";
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { SchedulerModule } from "./scheduler/scheduler.module.js";
     TrashModule,
     AssignmentModule,
     SchedulerModule,
+    TtsModule,
   ],
 })
 export class AppModule {}

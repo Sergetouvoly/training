@@ -7,6 +7,7 @@ import Link from "@tiptap/extension-link";
 import { ResizableImage, ImageToolbarButton } from "./ResizableImageExtension";
 import { ShapeNode, ShapeToolbarButton } from "./ShapeNodeExtension";
 import { ColorPickerButton } from "../../../../../components/ColorPickerButton";
+import { TtsGenerateButton } from "./TtsGenerateButton";
 import Placeholder from "@tiptap/extension-placeholder";
 import Underline from "@tiptap/extension-underline";
 import TextAlign from "@tiptap/extension-text-align";
@@ -1744,6 +1745,7 @@ export function AdminModuleEditor({ module }: { readonly module: Module }) {
               </svg>
               Prévisualiser
             </a>
+            <TtsGenerateButton moduleId={module.id} />
             <button type="button" onClick={handleSave} disabled={saving || publishing}
               className="flex items-center gap-2 rounded-xl border border-surface-warm px-4 py-2 text-sm font-medium text-ink hover:bg-surface transition-colors disabled:opacity-60">
               {saving

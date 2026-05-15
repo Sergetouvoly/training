@@ -16,5 +16,6 @@ const UPLOAD_ROOT = process.env["UPLOAD_DIR"] ?? join(process.cwd(), "uploads");
   ],
   controllers: [MediaController],
   providers: [MediaService],
+  exports: [MediaService],
 })
 export class MediaModule {}

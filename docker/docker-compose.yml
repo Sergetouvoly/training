@@ -30,6 +30,18 @@ services:
       timeout: 3s
       retries: 5
 
+  tts:
+    build:
+      context: ../services/tts
+    container_name: elearning-tts
+    restart: unless-stopped
+    ports:
+      - "3002:3002"
+    environment:
+      TTS_SHARED_SECRET: ${TTS_SHARED_SECRET}
+    volumes:
+      - tts_cache:/cache
+
   api:
     build:
       context: ..
@@ -46,6 +58,8 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXPIRY: ${JWT_EXPIRY:-1h}
       MFA_SECRET: ${MFA_SECRET}
+      TTS_URL: http://tts:3002
+      TTS_SHARED_SECRET: ${TTS_SHARED_SECRET}
     depends_on:
       postgres:
         condition: service_healthy
@@ -70,3 +84,4 @@ services:
 
 volumes:
   pg_data:
+  tts_cache:
