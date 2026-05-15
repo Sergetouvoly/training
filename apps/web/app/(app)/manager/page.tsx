@@ -8,6 +8,10 @@ import { TeamModuleTable } from "./TeamModuleTable";
 import type { TeamAggregate } from "@elearning/api-client";
 
 
+const JOB_LABELS: Record<string, string> = {
+  hr: "RH", developer: "Développeur", manager: "Manager", finance: "Finance",
+};
+
 const ALERT_ZONE_STYLES: Record<TeamAggregate["alert_zone"], { badge: string; label: string }> = {
   green: { badge: "bg-green-50 text-green-700 ring-1 ring-green-200", label: "Conforme" },
   amber: { badge: "bg-amber-50 text-amber-700 ring-1 ring-amber-200", label: "Attention" },

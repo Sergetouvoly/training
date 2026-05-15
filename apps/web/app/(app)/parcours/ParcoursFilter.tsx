@@ -145,7 +145,7 @@ export function ParcoursFilter({ paths, progress, assignments }: Props) {
             const dueDate = assignment?.due_date ? new Date(assignment.due_date) : null;
             const isOverdue = dueDate && dueDate < now && pathPct < 100;
 
-            let ctaLabel = t.paths.start;
+            let ctaLabel: string = t.paths.start;
             if (pathPct === 100) ctaLabel = "Revoir";
             else if (pathPct > 0) ctaLabel = "Continuer";
 

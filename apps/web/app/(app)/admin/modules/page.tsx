@@ -28,9 +28,6 @@ export default async function AdminModulesPage() {
             <span className="text-ink">Modules</span>
           </nav>
           <h1 className="text-2xl font-extrabold text-primary-deep">Modules de formation</h1>
-          <p className="mt-1 text-sm text-ink-soft">
-            {modules.length} module{modules.length > 1 ? "s" : ""} · {published} publié{published > 1 ? "s" : ""} · {totalLessons} leçon{totalLessons > 1 ? "s" : ""}
-          </p>
         </div>
         <Link
           href="/admin/modules/new"

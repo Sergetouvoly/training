@@ -21,8 +21,8 @@ export function SkeletonTable({ rows = 5 }: { readonly rows?: number }) {
   return (
     <div className="rounded-2xl border border-surface-warm bg-white overflow-hidden">
       <div className="border-b border-surface-warm bg-surface px-5 py-3 flex gap-6">
-        {[40, 20, 20, 20].map((w, i) => (
-          <Skeleton key={i} className={`h-3 w-${w}`} style={{ width: `${w}%` }} />
+        {["w-2/5", "w-1/5", "w-1/5", "w-1/5"].map((w, i) => (
+          <Skeleton key={i} className={`h-3 ${w}`} />
         ))}
       </div>
       {Array.from({ length: rows }).map((_, i) => (
