@@ -58,13 +58,10 @@ export function ColorPickerButton({
         {icon}
         {/* Pastille de la couleur courante */}
         <span
-          className="inline-block h-3.5 w-3.5 shrink-0 rounded-sm border border-black/15"
-          style={{
-            background: value,
-            backgroundImage: "repeating-conic-gradient(#ccc 0% 25%, #fff 0% 50%) 50%/6px 6px",
-          }}
+          className="inline-block h-3.5 w-3.5 shrink-0 overflow-hidden rounded-sm border border-black/15"
+          style={{ backgroundImage: "repeating-conic-gradient(#ccc 0% 25%, #fff 0% 50%)", backgroundSize: "6px 6px" }}
         >
-          <span className="block h-full w-full rounded-sm" style={{ background: value }} />
+          <span className="block h-full w-full" style={{ backgroundColor: value }} />
         </span>
         <svg width="8" height="8" viewBox="0 0 10 6" fill="currentColor" aria-hidden="true">
           <path d="M0 0l5 6 5-6z" />
