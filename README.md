@@ -8,12 +8,26 @@ Monorepo Turborepo — Next.js 15 (frontend) + NestJS (API) + PostgreSQL + Prism
 
 | Couche | Technologie |
 |---|---|
-| Frontend | Next.js 15, React 19, Tailwind v4, TipTap, NextAuth v5 |
-| API | NestJS 11, JWT, Prisma ORM |
+| Frontend | Next.js 15, React 19, Tailwind v4, TipTap 3, NextAuth v5 |
+| API | NestJS 11, JWT, Prisma ORM, @nestjs/schedule (cron), nodemailer (SMTP) |
 | Base de données | PostgreSQL 16 + pgvector |
 | Cache (optionnel) | Redis 7 |
 | Monorepo | Turborepo + pnpm workspaces |
-| Tests | Vitest (160 tests unitaires) |
+| Tests | Vitest (tests unitaires + intégration) |
+
+---
+
+## Fonctionnalités principales
+
+- **RBAC dynamique** — autorisation pilotée par permissions (`roles` × `permissions` × `user_permissions`), grants/denys individuels par utilisateur, JWT embarquant les permissions calculées au login
+- **Authentification** — login email/password + MFA TOTP optionnel, refresh JWT silencieux
+- **Contenu** — éditeur WYSIWYG TipTap (blocs riches : texte, images redimensionnables, vidéos, callouts, formes SVG, quiz), workflow brouillon → publié avec `version_hash`
+- **Parcours & modules** — assignation à des apprenants avec échéance, badge « En retard », recherche et filtres
+- **Évaluations** — banque de questions, import CSV et JSON, quiz avec scoring et stamps de compétence
+- **Espaces dédiés** — admin, formateur, manager (analytics équipe), apprenant
+- **Certificats & audit** — export PDF de certificat (R-1.5), dossier d'audit JSON signé (R-4.3)
+- **Notifications** — in-app actionnables, email SMTP, rappels automatiques (cron) : stamps expirants, assignations en retard, streaks
+- **Onboarding** — wizard 3 étapes à la première connexion d'un apprenant
 
 ---
 
@@ -171,6 +185,24 @@ Le champ **Code MFA** sur la page de connexion est optionnel — laisser vide.
 
 Pour se déconnecter : menu utilisateur (coin supérieur droit) → **Déconnexion**.
 
+> **Note RBAC** — admin, formateur et manager héritent des droits apprenant : ils peuvent suivre des formations en plus de leur espace dédié.
+
+---
+
+## Configuration optionnelle (via l'espace admin)
+
+Certains paramètres se configurent depuis `/admin/config` (table `app_config`), sans redéploiement :
+
+| Clé | Rôle |
+|---|---|
+| `smtp_host` `smtp_port` `smtp_user` `smtp_pass` | Serveur SMTP pour l'envoi d'emails — laisser `smtp_host` vide désactive les emails |
+| `platform_url` | URL de base utilisée dans les liens des emails |
+| `cron_stamps_expiring_enabled` | Active le rappel quotidien des certifications expirant sous 30 jours |
+| `cron_overdue_assignments_enabled` | Active le rappel quotidien des formations en retard |
+| `cron_streak_reminder_enabled` | Active le rappel quotidien de streak |
+| `jwt_ttl_minutes` | Durée de validité du JWT (défaut 480 min) |
+| `stamp_validity_months` | Durée de validité d'un stamp de compétence |
+
 ---
 
 ## Structure du monorepo
@@ -178,15 +210,19 @@ Pour se déconnecter : menu utilisateur (coin supérieur droit) → **Déconnexi
 ```
 APP/
 ├── apps/
-│   ├── api/          # NestJS — REST API, authentification JWT, Prisma
+│   ├── api/          # NestJS — REST API, JWT, Prisma
+│   │   └── src/      # auth, user, role, learning, assessment, assignment,
+│   │   │             # audit, simulator, social, scheduler, trash, ai…
 │   └── web/          # Next.js 15 — frontend apprenant + admin
 ├── packages/
-│   ├── api-client/   # Client HTTP typé partagé (fetch + types)
-│   ├── db/           # Prisma schema + migrations
-│   ├── domain/       # Types d'événements domaine
+│   ├── api-client/   # Client HTTP typé partagé (fetch + types + Block)
+│   ├── crypto/       # Hashes SHA-256, bundles de preuve audit
+│   ├── db/           # Prisma schema + migrations + seed RBAC
+│   ├── domain/       # Permissions + événements domaine
+│   ├── event-bus/    # Bus d'événements interne
 │   ├── i18n/         # Traductions fr/en
 │   ├── tsconfig/     # Config TypeScript partagée
-│   └── ui/           # Composants React partagés (Nav…)
+│   └── ui/           # Composants React partagés (Nav, Skeleton…)
 ├── docker/
 │   └── docker-compose.yml
 └── SPEC-CONTENT.md   # Spec du système de contenu riche
@@ -197,7 +233,7 @@ APP/
 ## Scripts utiles
 
 ```bash
-# Tests (160 tests unitaires)
+# Tests (unitaires + intégration)
 pnpm test
 
 # Vérification TypeScript sur tout le monorepo
@@ -224,22 +260,41 @@ pnpm --filter @elearning/db exec prisma migrate dev --name nom-de-la-migration
 
 | Route | Description |
 |---|---|
-| `/dashboard` | Tableau de bord personnel |
-| `/parcours` | Liste des parcours de formation |
+| `/dashboard` | Tableau de bord personnel (+ wizard onboarding première connexion) |
+| `/parcours` | Parcours de formation — recherche et filtres |
+| `/parcours/:pathId` | Détail d'un parcours |
 | `/parcours/:pathId/:moduleId` | Lecteur de module (leçons + quiz) |
-| `/profil` | Passeport de compétences |
+| `/module/catalogue` | Catalogue de modules — recherche et filtres |
+| `/eval` | Évaluations |
+| `/profil` | Passeport de compétences + modification du compte |
+| `/notifications` | Centre de notifications |
 
 ### Admin
 
 | Route | Description |
 |---|---|
 | `/admin` | Dashboard — stats modules, apprenants, parcours |
-| `/admin/modules` | Liste de tous les modules |
+| `/admin/modules` | Liste des modules — recherche, filtres statut/compétence/durée |
 | `/admin/modules/new` | Créer un module |
 | `/admin/modules/:id` | Éditeur WYSIWYG (TipTap) |
 | `/admin/paths` | Liste des parcours |
-| `/admin/paths/new` | Créer un parcours |
-| `/admin/paths/:id` | Éditer un parcours |
+| `/admin/paths/new` `…/:id` | Créer / éditer un parcours |
+| `/admin/competences` | Référentiel de compétences |
+| `/admin/assessment` | Banque de questions — import CSV/JSON |
 | `/admin/learners` | Liste des apprenants avec progression |
-| `/admin/learners/:id` | Détail apprenant — stamps + progression |
-| `/preview/module/:id` | Prévisualisation apprenant (admin) |
+| `/admin/learners/:id` | Détail apprenant — stamps, progression, assignation |
+| `/admin/users` | Comptes utilisateurs |
+| `/admin/users/:id` | Édition compte — rôles, vues, permissions directes |
+| `/admin/roles` `…/:id` | Gestion des rôles RBAC |
+| `/admin/permissions` | Catalogue des permissions — rôles et grants par permission |
+| `/admin/trash` | Corbeille — restauration d'éléments supprimés |
+| `/admin/config` | Configuration plateforme (SMTP, cron, JWT…) |
+
+### Espaces formateur & manager
+
+| Route | Description |
+|---|---|
+| `/trainer` | Espace formateur — modules + suivi apprenants |
+| `/trainer/learners` `…/:id` | Apprenants suivis par le formateur |
+| `/manager` | Espace manager — analytics équipe, progression par module |
+| `/manager/learners/:id` | Détail d'un membre de l'équipe |
